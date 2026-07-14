@@ -1,0 +1,17 @@
+---
+# SPDX-FileCopyrightText: 2026 Damián Búho <damian.buho@proton.me>
+#
+# SPDX-License-Identifier: MIT
+$schema: https://projectfile.org/schema/v1.json
+copyright:
+  year: 2026
+identity:
+  created: "2026-06-04"
+  name: ci-actions
+  summary: Provider action library for ci-resolver
+  title:
+    en: projectfile/ci-actions
+includes:
+  - https://kiota.ch/damian-buho/metadata/raw/branch/main/include.yaml
+  - https://kiota.ch/projectfile/metadata/raw/branch/main/include.yaml
+kind: SoftwareSourceCode

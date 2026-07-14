@@ -1,0 +1,53 @@
+# SPDX-FileCopyrightText: 2026 Damián Búho <damian.buho@proton.me>
+#
+# SPDX-License-Identifier: MIT
+#
+# forgejo-release — attach one cell-keyed binary to a Forgejo release. ci-resolver
+# keeps only "which action + ordering" (the neutral DAG); the recipe lives HERE,
+# pinned in workflows as `projectfile/ci-actions/forgejo-release@v1`. It is the
+# CONSUMER end of the same build→artifact hand-off the image scans use: ci-resolver
+# emits a download-artifact step that restores the producer's `dist/` tree to the
+# workspace BEFORE this action runs, so the action only logs in and attaches — no
+# build.
+#
+# The asset is the binary the build-binaries cell produced, found by suffixing the
+# resolved artifact path with the cell axes: <release-asset-path>-${GOOS}-${GOARCH}.
+# GOOS/GOARCH are the matrix axes the resolver bound onto the job env.
+#
+# Create-then-attach idempotency: `tea release create` errors HTTP 409 if a release
+# for the tag already exists (the 2nd..Nth matrix cell, a re-run, or a manual
+# pre-create). The first cell creates; later cells fall back to
+# `tea release attachment create`. The tag is the release title (tea's SDK requires
+# a non-empty title — the historical `tea release create --tag`-only call failed
+# with "title is empty").
+#
+# Auth is NOT an input: the leaf declares `env: [FORGEJO_TOKEN]` and ci-resolver's
+# per-target credentials overlay binds that NAME to a secret ref on THIS job. A
+# composite action's bash sees the job's OS env (it cannot read the `secrets`
+# context), so release.sh reads $FORGEJO_TOKEN directly — the env NAME is what
+# scopes the secret to the release job. GITHUB_SERVER_URL / GITHUB_REPOSITORY
+# (the standard Forgejo Actions context) supply the forge URL and repo.
+name: forgejo-release
+description: Attach one cell-keyed binary to a Forgejo release via tea (create-then-attach across matrix cells).
+inputs:
+  version:
+    # The git tag this release publishes from (ci-resolver passes ${{ github.ref_name }};
+    # binaries-released is gated tag-only, so it is always a tag). The tag is BOTH the
+    # release tag and the release title (tea's SDK requires a non-empty title).
+    description: Git tag to create the release at (also the release title).
+    required: true
+  release-asset-path:
+    # The UNSUFFIXED binary path resolved from org.projectfile.artifacts (the single
+    # kind=binary entry, e.g. dist/pf-cli). The action suffixes it per cell:
+    # <path>-${GOOS}-${GOARCH} (GOOS/GOARCH from the matrix env). The build→consumer
+    # download edge restored the producer's dist/ tree to the workspace already.
+    description: Unsuffixed binary path; the cell axes are appended to locate the asset.
+    required: true
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      env:
+        VERSION: ${{ inputs.version }}
+        RELEASE_PATH: ${{ inputs.release-asset-path }}
+      run: bash "$GITHUB_ACTION_PATH/release.sh"

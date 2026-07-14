@@ -1,0 +1,101 @@
+# SPDX-FileCopyrightText: 2026 Damián Búho <damian.buho@proton.me>
+#
+# SPDX-License-Identifier: MIT
+#
+# run-tool — run a containerised tool on the HOST runner via `docker run`, NOT as a
+# job `container:`. ci-resolver derives this for every plain tool that ships an
+# `image:` (see projectfile/ci-resolver §Session 10 / the-last-stand DECISION 1).
+#
+# Why not a job `container:`? A Forgejo/GHA job container must ship Node (the runner
+# execs the JS `checkout`/`download-artifact` actions INSIDE it) and a keep-alive
+# shell (`tail -f /dev/null` + `sh -c` for `run:`). Our `d9t/*-tools` images carry no
+# Node and a distroless tool (`hadolint`) carries neither, so a `container:` lowering
+# dies before the tool runs — on GitHub too: it is a portability defect of that
+# lowering, not the runner. Running the job on the HOST (which has Node/git/docker)
+# and shelling to `docker run` here is the cloud analogue of m6e's M6E_RUN, with the
+# imperative part kept in this versioned action so the rendered workflow stays
+# declarative (ci-resolver Law 2).
+#
+# The image arrives as TWO inputs (image/version) and recomposed: image carries its
+# FULL path (the registry host embedded by ci-resolver via a ci.images var, or a bare
+# Docker-Hub namespace); version is the tag. An external ref carrying its own tag
+# arrives pre-split into image + version by ci-resolver. The `run` string is exec'd in
+# the container: wrapped in `sh -c` only when it contains shell metacharacters
+# (&&, ||, |, ;, redirects, $(…)); word-split directly otherwise. The latter keeps
+# distroless images (e.g. hadolint/hadolint, FROM scratch) working — they carry no sh.
+name: run-tool
+description: Run a containerised tool on the host runner via docker run (never a job container).
+inputs:
+  image:
+    # Full image path — a registry-qualified ref (ci-resolver embeds the registry via
+    # a ci.images var: `kiota.ch/d9t/js-tools`) OR a bare Docker-Hub namespace/name
+    # (`hadolint/hadolint`). NO tag: the action appends :<version>. EXCEPTION: an
+    # instance override (`${{ vars.HADOLINT_IMAGE }}`) set to a FULL tagged mirror ref
+    # (`kiota.ch/d9t/hadolint/hadolint:v2.14.0`) carries its own tag — the action uses
+    # it verbatim and <version> is ignored (the operator pinned the mirror explicitly).
+    description: Image path (registry host optional; no tag unless an instance override pins the whole ref).
+    required: true
+  version:
+    # Image tag. ci-resolver passes the single BASE_IMAGE_DEFAULT_VERSION || latest
+    # expression for a registry-relative path, or the verbatim tag of an external ref.
+    description: Image tag.
+    required: true
+  run:
+    # The tool command. When it contains shell metacharacters (&&, ||, |, ;, redirects,
+    # $(...)) run.sh wraps it in `sh -c` so the container's shell evaluates them. Plain
+    # commands (the common case for run-tool) are word-split and exec'd directly, which
+    # also works for distroless images (hadolint/hadolint) that carry no sh.
+    description: Tool command (word-split directly, or sh -c when shell metacharacters are present).
+    required: true
+  env:
+    # Newline-separated NAME=VALUE pairs to forward into the container (matrix axes, the
+    # image-archive path, bound credential refs). Each becomes `--env NAME=VALUE`. The
+    # VALUE rides this input because a composite action does NOT inherit the caller job's
+    # `env:` as process env (the Forgejo runner drops it) — a by-NAME passthrough would
+    # forward an empty var. A bare NAME (no `=`) falls back to the runner's own OS env.
+    description: Newline-separated NAME=VALUE pairs to forward into the container.
+    required: false
+    default: ""
+  mounts:
+    # Whitespace-separated `HOST:CONTAINER[:ro]` volume specs the resolver computed
+    # (e.g. a scanner DB cache dir). Each is appended verbatim as a `--volume`. This
+    # action is semantics-free — it never names "cache"; the resolver decides whether
+    # the host side is a persistent runner dir (self-hosted, RO) or an actions/cache-
+    # restored dir (ephemeral), so one primitive serves every target (Law 3).
+    description: Whitespace-separated HOST:CONTAINER[:ro] volume specs to mount.
+    required: false
+    default: ""
+  network:
+    # A container network to attach the tool to, so it can reach the LIVE compose stack
+    # (dc-up-d) by compose service name — the ssh-audit case (black-box audit of the
+    # running sshd). The resolver resolves the stack's network NAME from the symbolic
+    # `network: live` tool field (→ the ${M6E_COMPOSE_PROJECT_NAME}-network the pipeline
+    # compose file creates). Empty => the default bridge (every non-live tool). Host
+    # networking is deliberately NOT an option (port collisions + privilege).
+    description: Container network to join (reach the live compose stack by service name).
+    required: false
+    default: ""
+  pull:
+    # docker/podman `--pull` policy (RUN_TOOL_PULL). ci-resolver sets `missing` for an
+    # IMMUTABLE pinned tag (fetch once, reuse — re-pulling an unmovable digest each run
+    # only spends registry rate-limit budget) and leaves it EMPTY for a mutable dev↔latest
+    # tag, so run.sh keeps its secure `always` default and never runs a stale freshly-pushed
+    # image. An instance overrides globally via the RUN_TOOL_PULL env on the runner.
+    description: Image pull policy (always|missing|never); empty keeps run.sh's always default.
+    required: false
+    default: ""
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      env:
+        IMAGE: ${{ inputs.image }}
+        VERSION: ${{ inputs.version }}
+        RUN: ${{ inputs.run }}
+        ENV_VARS: ${{ inputs.env }}
+        MOUNTS: ${{ inputs.mounts }}
+        NETWORK: ${{ inputs.network }}
+        # An explicit input WINS; only an empty input falls through to run.sh's `always`
+        # default (`${VAR:-}` keeps an unset var unset, so the default still applies).
+        RUN_TOOL_PULL: ${{ inputs.pull }}
+      run: bash "$GITHUB_ACTION_PATH/run.sh"

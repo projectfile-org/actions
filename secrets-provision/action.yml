@@ -1,0 +1,78 @@
+# SPDX-FileCopyrightText: 2026 Damián Búho <damian.buho@proton.me>
+#
+# SPDX-License-Identifier: MIT
+#
+# secrets-provision — materialise the `.secrets/` tree a compose `secrets:` block
+# mounts, BEFORE dc-up-d. The cloud (ci-resolver) half of the
+# `org.projectfile.ci.secrets` provisioning contract (`m6e/secrets-system.md`);
+# the m6e half reads the SAME declarations and calls the SAME dispatch logic.
+#
+# One source of truth, read by both lowerings: ci-resolver serializes the
+# `org.projectfile.ci.secrets` subtree as JSON into `declarations:`; provision.sh
+# dispatches each entry — `value:` writes a literal verbatim, `docker:` runs
+# `docker run <resolved-image> <run>` and captures stdout as the secret. The
+# recipe library (openssl, htpasswd, m6e-secret-*) lives in the misc-tools image,
+# NOT here — a new secret kind is one image edit + a `docker: { run: ... }`
+# declaration, no ci-actions/ci-resolver redeploy. This action is a thin
+# dispatcher by design (the analogue of run-tool: the lowering pins HOW here, the
+# DAG carries only WHICH + WHEN).
+#
+# No outputs: secrets are FILES written into the workspace (the intra-job file
+# hand-off, M6E_DIGEST_FILE precedent from oci-push/push.sh). The compose stack
+# the same job runs picks them up from `dir:` (default `.secrets`).
+#
+# `image:` is the project's OWN built image (the f5m/tor keygen case) reached by
+# a declaration with `image: self`; `default-image:` is the misc-tools image the
+# `docker:` shorthand and a declaration with no `image:` resolve to. Both arrive
+# FULLY-FORMED (registry + tag, the way run-tool takes its `image`), so the
+# dispatcher does no ref composition — it only picks WHICH of the two a given
+# declaration uses.
+name: secrets-provision
+description: Materialise the .secrets/ tree from org.projectfile.ci.secrets declarations (value-write or docker-run dispatcher).
+inputs:
+  declarations:
+    # JSON serialization of the org.projectfile.ci.secrets subtree (the same map
+    # the m6e lowering reads). Each value is either a bare string (≡ {value: str})
+    # or an object with exactly one of `value` (a literal) or `docker` (a string
+    # ≡ {run: str} with the default image, or an object {image, run, env}). An
+    # EMPTY object `{}` (or omitted input) is a no-op — the secrets-provision
+    # step is only injected when the subtree is non-empty, but this action stays
+    # a safe no-op on an empty input too (the empty-subtree no-op invariant).
+    description: JSON map of org.projectfile.ci.secrets (name -> {value | docker}).
+    required: false
+    default: "{}"
+  dir:
+    # Workspace-relative root the dotted secret name is written under. Dots in the
+    # name are the ONLY path separator (`gf.security.admin.password` ->
+    # `<dir>/gf/security/admin/password`); hyphens/underscores are literal. Defaults
+    # to `.secrets` — the path a compose `secrets:` block mounts and m6e's
+    # M6E_SECRETS_DIR convention uses.
+    description: Root directory the dotted secret names are written under (default .secrets).
+    required: false
+    default: ".secrets"
+  default-image:
+    # Fully-formed misc-tools image ref (registry + tag) — where `docker:` shorthand
+    # recipes and `docker:` object declarations with no `image:` run. openssl,
+    # htpasswd, and the m6e-secret-* recipes live here. ci-resolver threads the
+    # D9T_MISC_TOOLS_IMAGE var the same way it threads a tool manifest's image var.
+    description: "Fully-formed misc-tools image ref for the docker: shorthand / no-image case."
+    required: false
+    default: ""
+  image:
+    # Fully-formed ref of the project's OWN built image — the target of a
+    # declaration with `image: self` (the f5m/tor keygen self-hosting case). An
+    # empty value is legal ONLY when no declaration uses `image: self`; provision.sh
+    # fails loudly if a `self` declaration is met with an empty `image:` input.
+    description: "Fully-formed project image ref, the target of `docker: { image: self }`."
+    required: false
+    default: ""
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      env:
+        DECLARATIONS: ${{ inputs.declarations }}
+        DIR: ${{ inputs.dir }}
+        DEFAULT_IMAGE: ${{ inputs.default-image }}
+        IMAGE: ${{ inputs.image }}
+      run: bash "$GITHUB_ACTION_PATH/provision.sh"

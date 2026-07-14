@@ -1,0 +1,99 @@
+# SPDX-FileCopyrightText: 2026 Damián Búho <damian.buho@proton.me>
+#
+# SPDX-License-Identifier: MIT
+#
+# container-build/buildah — the DAEMONLESS realisation of the `container-build`
+# provider leaf (see projectfile/ci-resolver general-plan.md, Q3). Drop-in analogue
+# of `container-build/buildx`: it emits the IDENTICAL OCI-tar hand-off
+# (<artifact-name>.tar), so a downstream image-scan consumes it the same way
+# regardless of backend. No docker daemon required — this is the path for engines
+# without one (Tekton) and for rootless GHA/Forgejo runners. Pinned in workflows as
+# `projectfile/ci-actions/container-build/buildah@v1`. Assumes buildah on PATH (the
+# daemonless premise: the runner/Task image provides it).
+name: container-build-buildah
+description: Build a Dockerfile to an OCI archive tar (buildah) and upload it as a cell-keyed artifact.
+inputs:
+  artifact-name:
+    # Cell-keyed stem from ci-resolver (image-<axis>-…). The build→scan hand-off
+    # contract: this action emits <artifact-name>.tar and uploads it under
+    # <artifact-name>, so a downstream image-scan in the same cell pulls only its
+    # own tar and reads it DAEMONLESSLY — no registry, no intra-pipeline creds.
+    description: Cell-keyed artifact + tar stem.
+    required: true
+  build-args:
+    # Newline-separated build-arg NAME=VALUE pairs (matrix axes + the manifest's
+    # var/get/ci args, resolved by ci-resolver). The VALUE rides the input because a
+    # composite action does NOT inherit the caller job's `env:` as process env (the
+    # Forgejo runner drops it) — a by-NAME `--build-arg NAME` passthrough would build
+    # with an empty arg. A bare NAME (no `=`) falls back to reading it from env.
+    description: Newline-separated build-arg NAME=VALUE pairs.
+    required: false
+    default: ""
+  file-args:
+    # Whitespace-separated NAME=path specs. The action reads the first non-comment,
+    # non-blank line of each path at build time and passes it as --build-arg
+    # NAME=<value> (the per-cell digest pin). Replaces the decomment/grep step that
+    # used to be inlined in the workflow — the YAML stays declarative.
+    description: Whitespace-separated NAME=path file-sourced build-args.
+    required: false
+    default: ""
+  mounts:
+    # Abstract binds (the tool's `mounts` map) lowered to a whitespace-separated
+    # name=mountpoint list. Each is satisfied with a throwaway EMPTY dir and a
+    # --build-context — the concrete realisation of an abstract bind, kept HERE (the
+    # model never names it).
+    description: Whitespace-separated name=mountpoint bind list.
+    required: false
+    default: ""
+  image:
+    # The resolved image ref ci-resolver composes from the project basename
+    # (<registry>/<ns>/<name>:<tag>). Embedded as the OCI archive's reference so the
+    # tar is self-describing — a downstream `docker load` restores THIS tag and the
+    # compose stack finds it. Empty => anonymous archive (the historical behaviour).
+    description: Image ref to embed in the OCI archive (empty => anonymous).
+    required: false
+    default: ""
+  context:
+    description: Build context path.
+    required: false
+    default: "."
+  pf-cli-image:
+    # The projectfile/cli image ref (registry + tag) ci-resolver composes from the
+    # ci.images PF_CLI_IMAGE var. oci-labels.sh reads the projectfile through it when
+    # no host pf-cli exists — WITHOUT it the projectfile labels are silently skipped.
+    # Rides a `with:` input, not job env: the Forgejo runner drops job env: for
+    # composite actions. The fallback runs the ref with M6E_CONTAINER_RUNTIME (docker
+    # by default); a daemonless buildah runner must set it (e.g. podman) or the
+    # projectfile labels degrade to skipped. Empty => host pf-cli or skip.
+    description: projectfile/cli image ref for the pf-cli container fallback (empty => host pf-cli or skip).
+    required: false
+    default: ""
+  target:
+    # Dockerfile stage to build (buildah --target), from ci-resolver's per-lowering
+    # org.projectfile.ci.build-target.<gha|forgejo>. Empty => no --target => last
+    # stage, matching the make-plane buildah-build default.
+    description: Dockerfile stage to build (empty => last stage).
+    required: false
+    default: ""
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      env:
+        BUILD_ARGS: ${{ inputs.build-args }}
+        FILE_ARGS: ${{ inputs.file-args }}
+        MOUNTS: ${{ inputs.mounts }}
+        ARTIFACT_NAME: ${{ inputs.artifact-name }}
+        IMAGE: ${{ inputs.image }}
+        CONTEXT: ${{ inputs.context }}
+        PF_CLI_IMAGE: ${{ inputs.pf-cli-image }}
+        M6E_BUILD_TARGET: ${{ inputs.target }}
+      run: bash "$GITHUB_ACTION_PATH/build.sh"
+    # @v3 (NOT v7) because buildah is the FORGEJO backend: Forgejo's artifact store
+    # speaks the v1 protocol, and upload-artifact@v4+ (`@actions/artifact` v2) refuses a
+    # non-github.com server as GHES. Pairs with the resolver's forgejo Download pin
+    # (download-artifact@v3). The buildx sibling (GitHub) stays @v7.
+    - uses: actions/upload-artifact@v3
+      with:
+        name: ${{ inputs.artifact-name }}
+        path: ${{ inputs.artifact-name }}.tar

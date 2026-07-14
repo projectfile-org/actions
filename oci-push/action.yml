@@ -1,0 +1,78 @@
+# SPDX-FileCopyrightText: 2026 Damián Búho <damian.buho@proton.me>
+#
+# SPDX-License-Identifier: MIT
+#
+# oci-push — the registry-push realisation of the `oci-push` provider leaf (see
+# projectfile/ci-resolver §9 publish). ci-resolver keeps only "which provider +
+# ordering" (the neutral DAG); the recipe lives HERE, pinned in workflows as
+# `projectfile/ci-actions/oci-push@v1`. It is the CONSUMER end of the same
+# build→artifact hand-off the image scans use: ci-resolver emits a download-artifact
+# step that pulls this cell's `<artifact-name>.tar` BEFORE this action runs, so the
+# action only logs in and pushes — no build, no buildx.
+#
+# Transport: push.sh uses skopeo to copy the archive DIRECTLY to the registry
+# (`skopeo copy docker-archive:<tar> docker://<ref>`), never loading it into the
+# daemon's image store. The previous load+retag+push left a tagged copy (and a
+# dangling retag-orphan) on the shared forgejo runner's persistent store on EVERY
+# release — the publish job was the single biggest disk-bloat source. The dest tag
+# is the only naming that matters; the archive's stamped name is ignored.
+#
+# Auth is NOT an input: the leaf declares `env: [REGISTRY_USERNAME, REGISTRY_PASSWORD]`
+# and ci-resolver's per-target credentials overlay binds those NAMES to secret refs on
+# THIS job. A composite action's bash sees the job's OS env (it cannot read the
+# `secrets` context), so push.sh reads the two vars directly — the env NAME is what
+# scopes the secret to the push job.
+name: oci-push
+description: Log in and copy a cell-keyed OCI archive tar straight to a registry via skopeo.
+inputs:
+  artifact-name:
+    # Cell-keyed stem from ci-resolver (image-<axis>-…); the matching <artifact-name>.tar
+    # was pulled by the download-artifact step ci-resolver emits ahead of this action.
+    description: Cell-keyed artifact + tar stem.
+    required: true
+  image:
+    # The basename ref ci-resolver composed (<ns>/<name>:<tag>, Docker Hub form). Its
+    # repo half (everything left of the last `:`) is the prefix each cascade tag is
+    # pushed under; its tag half is the lone tag pushed when VERSION is empty (the
+    # no-cascade fallback). skopeo ignores the archive's stamped name and renames at
+    # the dest, so the ref here is purely the push naming contract.
+    description: Basename ref whose repo half prefixes every push tag.
+    required: true
+  version:
+    # The git tag this build published from (ci-resolver passes ${{ github.ref_name }};
+    # publish-image is gated tag-only, so it is always a tag). push.sh lowers it into the
+    # SEMVER tag cascade: a stable X.Y.Z pushes X.Y.Z + X.Y + X + latest; a pre-release
+    # (X.Y.Z-rc1) or non-semver tag pushes ONLY its exact spelling (latest/heads stay put).
+    # A leading `v` is stripped. EMPTY keeps the historical single push of the load tag.
+    description: Git tag driving the semver tag cascade (empty => single load-tag push).
+    required: false
+    default: ""
+  registry:
+    # Push-target registry — the OUTPUT_REGISTRY forge var ci-resolver threads (the
+    # forge-dependent place THIS project publishes TO). DISTINCT from the per-namespace
+    # INPUT registries (B19_DOCKER_REGISTRY & friends = where base images come FROM); the
+    # two can differ (pull b19/go from kiota.ch, publish d9t/go-tools to ghcr.io). Set per
+    # forge in the vars store (org var = default, repo var = project-wise override). The
+    # value is the full push prefix (host + optional owner/path); empty => Docker Hub.
+    description: Push-target registry to log in to and prefix the push ref (OUTPUT_REGISTRY; empty => Docker Hub).
+    required: false
+    default: ""
+outputs:
+  digest:
+    # The content digest (sha256:…) of the published image, tag-independent (every
+    # cascade tag points at the same image). A downstream cosign sign/attest step
+    # consumes `${repo}@${digest}` so the signature binds the immutable content, not a
+    # mutable tag. push.sh also drops it in $M6E_DIGEST_FILE for the in-job fused signer.
+    description: Content digest (sha256:…) of the pushed image.
+    value: ${{ steps.push.outputs.digest }}
+runs:
+  using: composite
+  steps:
+    - id: push
+      shell: bash
+      env:
+        ARTIFACT_NAME: ${{ inputs.artifact-name }}
+        IMAGE: ${{ inputs.image }}
+        VERSION: ${{ inputs.version }}
+        REGISTRY: ${{ inputs.registry }}
+      run: bash "$GITHUB_ACTION_PATH/push.sh"
