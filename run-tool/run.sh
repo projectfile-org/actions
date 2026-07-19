@@ -107,17 +107,25 @@ echo "run-tool ref=${ref} run=${RUN} env=[${env_names}] mounts=[${MOUNTS:-}] net
 # secure-default switch (AGENTS: expose behaviour) — set it to `missing`/`never` for an
 # offline or local run (e.g. act against images already in the host store).
 pull="${RUN_TOOL_PULL:-always}"
-# Build the container command: wrap in `sh -c` only when RUN contains shell metacharacters
-# (&&, ||, |, ;, $(...), backtick, redirects). Distroless images (e.g. hadolint/hadolint,
-# FROM scratch) have no sh at all — passing `sh -c` as the command causes crun to fail with
-# "executable file sh not found" before the container process starts. Plain tool invocations
-# (the common case for run-tool) need no shell; word-splitting is sufficient and works for
-# both our b19 tini-based images and distroless images alike.
-shell_meta_re='[&|;<>]'
+# Build the container command: wrap in `sh -c` when RUN contains shell metacharacters
+# (&&, ||, |, ;, $(...), backtick, redirects) OR double-quotes. Distroless images
+# (e.g. hadolint/hadolint, FROM scratch) have no sh at all — passing `sh -c` as the
+# command causes crun to fail with "executable file sh not found" before the
+# container process starts. Plain tool invocations (the common case for run-tool)
+# need no shell; word-splitting is sufficient and works for both our b19 tini-based
+# images and distroless images alike.
+#
+# Double-quote in RUN forces the sh path on purpose: a quoted arg like
+# `.scripts/publish-go-module.sh "${{ github.ref_name }}"` is sh syntax — the
+# quotes ask the shell to strip them. The word-split path leaves quotes as LITERAL
+# characters (no shell to consume them), so the script receives `"v1.0.7"` instead
+# of `v1.0.7`. Treating `"` as shell-meta routes such runs through `sh -c`, which
+# strips the quotes and hands the script the clean argument the author expected.
+shell_meta_re='[&|;<>"]'
 dollar_paren="\$("
 backtick='`'
 if [[ "${RUN}" =~ ${shell_meta_re} || "${RUN}" == *"${dollar_paren}"* || "${RUN}" == *"${backtick}"* ]]; then
-  echo "run-tool shell-wrap=yes (shell metacharacters detected in run)"
+  echo "run-tool shell-wrap=yes (shell metacharacters or quotes detected in run)"
   cmd=(sh -c "${RUN}")
 else
   echo "run-tool shell-wrap=no (plain command, word-split)"
