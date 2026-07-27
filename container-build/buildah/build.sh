@@ -37,16 +37,23 @@ echo "buildah building artifact=${ARTIFACT_NAME} image=${IMAGE:-<anonymous>} con
 # (manifest format vs tar layout are orthogonal knobs); matches the local
 # `buildah commit --format docker` plane.
 #
-# --squash: flatten the build layers into one on top of the base. Load-bearing for
-# multi-stage CHILD images (b19/gcc, b19/llvm, …) that inherit /app (owned 1000:1000
-# by the base) and then write into it from BOTH a root stage (build-stage base) and a
-# non-root stage (build-stage user, USER 1000). buildah's LAYERED commit mis-maps such
-# a cross-UID, multi-layer directory and re-owns /app to 0:0 in the assembled manifest
-# — even though every in-build `stat` reads 1000:1000 and no hook ever chowns it (a
-# trailing `chown 1000 /app` does NOT fix it; the corruption is below the filesystem,
-# at manifest assembly). Squashing removes the per-layer diff that mis-maps the dir, so
-# /app commits 1000:1000. ubuntu (a single-stage base) never hit this — it has no
-# cross-UID child stages. The low-level buildah build has no layer cache to lose here.
+# Layer handling: M6E_BUILDAH_LAYERS defaults to TRUE so buildah caches intermediate
+# layers in the runner’s persistent graphroot and a LATER build of the same Dockerfile
+# reuses them (the cross-build build-step cache — a rebuild that changes only a trailing
+# line otherwise re-runs every step, e.g. a full GCC compile for b19/gcc). This is the
+# inverse of buildah’s own default (false = single commit, no caching) and of the old
+# --squash behaviour: both threw the build-step cache away. --squash is NOT used: under
+# layers=true it would defeat the cache (flatten away the very intermediates we keep
+# them for), and under layers=false it is redundant (both collapse to one layer).
+#
+# Why we diverge from buildah’s default toward caching: the runner’s image-store GC
+# (a `podman image prune` loop) was DESIGNED to keep the warm cache bounded, but it
+# reaped intermediate layers that an in-flight OR cached build still needed — it ruined
+# the cache, not just disk usage — so it was REMOVED. With nothing pruning, dangling
+# intermediates accumulate but are exactly the cache we want; layer reuse across builds
+# is the goal. M6E_BUILDAH_LAYERS=false opts back into the uncached single-commit path
+# (e.g. for a one-off build where cache churn isn’t worth the disk).
+buildah_layers="${M6E_BUILDAH_LAYERS:-true}"
 # env -u SOURCE_DATE_EPOCH: buildah honors the SOURCE_DATE_EPOCH env var to stamp
 # the image's native `created` field — an inherited value would freeze it (e.g. at
 # 1970-01-01 for 0). Stripped here, buildah stamps the real build time.
@@ -56,7 +63,7 @@ echo "buildah building artifact=${ARTIFACT_NAME} image=${IMAGE:-<anonymous>} con
 # image tag unconditionally — a freshly pushed b19/gcc, b19/llvm, … under the
 # same tag would silently never be fetched. "newer" checks the registry digest
 # and only re-pulls on an actual change, so unchanged bases stay cache-hits.
-env -u SOURCE_DATE_EPOCH buildah build --format docker --squash --pull=newer "${build_args[@]}" "${build_contexts[@]}" "${label_args[@]+"${label_args[@]}"}" "${target_args[@]+"${target_args[@]}"}" --iidfile iid.txt "${CONTEXT}"
+env -u SOURCE_DATE_EPOCH BUILDAH_LAYERS="${buildah_layers}" buildah build --format docker --pull=newer "${build_args[@]}" "${build_contexts[@]}" "${label_args[@]+"${label_args[@]}"}" "${target_args[@]+"${target_args[@]}"}" --iidfile iid.txt "${CONTEXT}"
 image="$(cat iid.txt)"
 # Embed the image ref AS the docker archive's reference (docker-archive:path:reference)
 # so a downstream `docker load` restores THIS tag and the compose stack finds it by tag —
@@ -67,6 +74,36 @@ if [ -n "${IMAGE}" ]; then
 fi
 echo "exporting image=${image} -> ${dest}"
 buildah push "${image}" "${dest}"
+
+# Optional whole-tar compression of the exported artifact. IO is frequently the
+# bottleneck on the upload/download/publish hop, so trading CPU for a smaller tar
+# wins net wall-clock. docker load AUTO-DETECTS gzip/bzip2/xz/zstd (Docker 25+), so
+# the live-stack consumer needs no change; the only consumer that cares is oci-push
+# (skopeo requires a seekable UNcompressed docker-archive — it decompresses to a
+# temp .tar before copy, see oci-push/push.sh). Layers inside the tar are typically
+# already gzip, so this squeezes mainly the manifest/config/metadata slack — modest
+# ratio but cheaper bytes on every hop. Default M6E_ARCHIVE_COMPRESSION=none keeps
+# today’s uncompressed behaviour byte-for-byte. zstd for its fast DEcompress (every
+# consumer pays that, the builder pays compress once). Level 3 = the zstd sweet spot.
+case "${M6E_ARCHIVE_COMPRESSION:-none}" in
+  none)
+    ;;
+  zstd)
+    if ! command -v zstd >/dev/null 2>&1; then
+      echo "buildah compress: zstd requested but binary missing artifact=${ARTIFACT_NAME} — falling back to uncompressed" >&2
+    else
+      _level="${M6E_ARCHIVE_COMPRESSION_LEVEL:-3}"
+      echo "buildah compressing artifact=${ARTIFACT_NAME}.tar algo=zstd level=${_level}"
+      # -T0: use all cores. --rm: remove the source .tar on success (the .zst is the
+      # artifact that gets uploaded). -f: overwrite any stale .zst from a prior attempt.
+      zstd -T0 -"${_level}" -f --rm "${ARTIFACT_NAME}.tar"
+      echo "buildah compressed artifact=${ARTIFACT_NAME}.tar.zst"
+    fi
+    ;;
+  *)
+    echo "buildah compress: unknown M6E_ARCHIVE_COMPRESSION=${M6E_ARCHIVE_COMPRESSION} (expected none|zstd) — falling back to uncompressed" >&2
+    ;;
+esac
 
 # Self-clean the ephemeral store copy: the exported tar is the deliverable (uploaded
 # as this cell's artifact — the live-stack job re-loads it, oci-push skopeo-copies it).

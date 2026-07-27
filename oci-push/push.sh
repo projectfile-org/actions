@@ -24,6 +24,20 @@ archive="${ARTIFACT_NAME}.tar"
 : "${REGISTRY_USERNAME:?oci-push: REGISTRY_USERNAME must be bound (credentials overlay)}"
 : "${REGISTRY_PASSWORD:?oci-push: REGISTRY_PASSWORD must be bound (credentials overlay)}"
 
+# skopeo’s docker-archive: transport requires a seekable UNcompressed file (it does
+# random-access Seek on the tar, and --dest-compress is silently ignored for this
+# transport). The download step may have fetched a compressed .tar.zst (when the build
+# ran with M6E_ARCHIVE_COMPRESSION=zstd for smaller upload/download); decompress it to
+# the plain .tar skopeo reads. Only the build→publish hop used compression; this is the
+# single place that must undo it. ${decompressed} flags the temp for trap cleanup so the
+# ORIGINAL downloaded .tar.zst is never deleted (only our derived .tar is).
+decompressed=
+if [ -f "${ARTIFACT_NAME}.tar.zst" ]; then
+  echo "oci-push decompressing archive=${ARTIFACT_NAME}.tar.zst -> ${archive} (skopeo needs seekable uncompressed)"
+  zstd -d "${ARTIFACT_NAME}.tar.zst" -o "${archive}" -f
+  decompressed=1
+fi
+
 # skopeo holds registry creds in an auth file (Docker config format, password
 # base64). mktemp on the runner's disk-backed /tmp; the EXIT trap wipes it so the
 # credential never persists past the job (a load+retag left no creds behind, and
@@ -31,7 +45,7 @@ archive="${ARTIFACT_NAME}.tar"
 # for every cascade tag — same content), read once after the loop.
 authfile="$(mktemp)"
 digestfile="$(mktemp)"
-trap 'rm -f "${authfile}" "${digestfile}"' EXIT
+trap 'rm -f "${authfile}" "${digestfile}"${decompressed:+ "${ARTIFACT_NAME}.tar"}' EXIT
 
 # mktemp leaves a ZERO-BYTE file; skopeo login READS the authfile (to merge the new
 # entry) before writing, and empty is not valid JSON — "unexpected end of JSON input".

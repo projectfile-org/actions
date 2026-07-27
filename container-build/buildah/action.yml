@@ -88,6 +88,14 @@ runs:
         CONTEXT: ${{ inputs.context }}
         PF_CLI_IMAGE: ${{ inputs.pf-cli-image }}
         M6E_BUILD_TARGET: ${{ inputs.target }}
+        # Artifact compression + buildah layer-cache toggles. Forwarded verbatim from
+        # the job env (set there via a workflow ci.env entry or the runner’s ambient
+        # env); build.sh applies the defaults (none/true) when absent — uncompressed tar
+        # but WITH buildah’s cross-build layer cache (the build-step cache the old
+        # --squash threw away). Override M6E_BUILDAH_LAYERS=false to opt out of caching.
+        M6E_ARCHIVE_COMPRESSION: ${{ env.M6E_ARCHIVE_COMPRESSION }}
+        M6E_ARCHIVE_COMPRESSION_LEVEL: ${{ env.M6E_ARCHIVE_COMPRESSION_LEVEL }}
+        M6E_BUILDAH_LAYERS: ${{ env.M6E_BUILDAH_LAYERS }}
       run: bash "$GITHUB_ACTION_PATH/build.sh"
     # @v3 (NOT v7) because buildah is the FORGEJO backend: Forgejo's artifact store
     # speaks the v1 protocol, and upload-artifact@v4+ (`@actions/artifact` v2) refuses a
@@ -96,4 +104,7 @@ runs:
     - uses: actions/upload-artifact@v3
       with:
         name: ${{ inputs.artifact-name }}
-        path: ${{ inputs.artifact-name }}.tar
+        # Glob covers both the uncompressed .tar (default) and the .tar.zst produced
+        # when M6E_ARCHIVE_COMPRESSION=zstd — build.sh leaves exactly one of them on
+        # disk (zstd --rm drops the source .tar on success), so the glob matches one file.
+        path: ${{ inputs.artifact-name }}.tar*
