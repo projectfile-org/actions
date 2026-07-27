@@ -12,6 +12,13 @@
 #                a by-NAME `--build-arg NAME` passthrough would read an UNSET var and
 #                build with empty args (silently wrong: e.g. a matrix series defaulting).
 #                A bare NAME (no `=`) falls back to buildx/buildah reading it from env.
+#                A `NAME=` with an EMPTY value is SKIPPED, not forwarded: Docker only
+#                falls through to the Dockerfile's own `ARG NAME=<default>` when the
+#                flag is absent entirely — an explicit `--build-arg NAME=` always wins,
+#                even over a non-empty Dockerfile default (e.g. a curated mirror URL or
+#                locale list). The render emits `NAME=${{ x || y }}`, which resolves to
+#                exactly this empty form whenever neither side is set — mirrors the
+#                make-plane backends (buildx-build/buildah-build's own `[ -n "${_def}" ]`).
 #   $FILE_ARGS   `NAME=path` specs; the value is the first non-comment, non-blank line
 #                of path (the per-cell digest pin), read at build time from the checkout.
 # SHARED by every container-build backend (buildx, buildah) so this lives in one
@@ -24,8 +31,16 @@ build_args=()
 # shellcheck disable=SC2153
 while IFS= read -r pair; do                     # one NAME=VALUE per line
   [ -n "${pair}" ] || continue                  # tolerate blank lines / empty input
+  case "${pair}" in
+    *=*) ;;                                     # NAME=VALUE form, handled below
+    *) echo "build-arg name=${pair} (env)"; build_args+=(--build-arg "${pair}"); continue ;;
+  esac
   _name="${pair%%=*}"
   _val="${pair#*=}"
+  if [ -z "${_val}" ]; then                     # let the Dockerfile's own ARG default win
+    echo "build-arg name=${_name} (empty — skipped, Dockerfile default applies)"
+    continue
+  fi
   # Log NAME always; for cache-backend vars also log the VALUE LENGTH (not the
   # value) so an empty-at-source endpoint is diagnosable without leaking it.
   case "${_name}" in
@@ -34,7 +49,7 @@ while IFS= read -r pair; do                     # one NAME=VALUE per line
     *)
       echo "build-arg name=${_name}" ;;
   esac
-  build_args+=(--build-arg "${pair}")           # NAME=VALUE; a bare NAME pulls from env
+  build_args+=(--build-arg "${pair}")           # NAME=VALUE
 done <<< "${BUILD_ARGS:-}"
 unset _name _val
 
