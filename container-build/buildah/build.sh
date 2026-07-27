@@ -65,6 +65,38 @@ buildah_layers="${M6E_BUILDAH_LAYERS:-true}"
 # and only re-pulls on an actual change, so unchanged bases stay cache-hits.
 env -u SOURCE_DATE_EPOCH BUILDAH_LAYERS="${buildah_layers}" buildah build --format docker --pull=newer "${build_args[@]}" "${build_contexts[@]}" "${label_args[@]+"${label_args[@]}"}" "${target_args[@]+"${target_args[@]}"}" --iidfile iid.txt "${CONTEXT}"
 image="$(cat iid.txt)"
+
+# Layer-metadata heal (buildah --layers bug workaround, twin of the make-plane
+# buildah-build block): buildah ≤1.42 omits a cache-mountpoint PARENT dir entry
+# from a step's committed layer when that RUN only modified (copy-up, not create)
+# a pre-existing file under it — the orphaned child materializes the parent as
+# root:755 and overlay "topmost layer wins" poisons the merged image. b19 images
+# hit it on every `build-stage user` (write-lineage under ${B19_HOME} with the
+# download cache mounted) and lose home-dir ownership, failing test.d. Re-assert
+# the declared posture (uid ${B19_UID}, gid 0, g+rwX — what 200-permissions.sh
+# set) on OFFENDING dirs only, committed as a final layer that outranks the
+# poisoned ones, and hand the healed ID downstream so the exported tar carries
+# it. Non-b19 images (no B19_HOME env) skip. M6E_BUILDAH_HEAL=N opts out.
+if [ "${M6E_BUILDAH_HEAL:-Y}" != "N" ] && [ "${buildah_layers}" = "true" ]; then
+  img_env="$(buildah inspect --type image --format '{{range .OCIv1.Config.Env}}{{println .}}{{end}}' "${image}" 2>/dev/null || true)"
+  b19_home="$(printf '%s\n' "${img_env}" | sed -n 's/^B19_HOME=//p' | head -1)"
+  b19_uid="$(printf '%s\n' "${img_env}" | sed -n 's/^B19_UID=//p' | head -1)"
+  if [ -n "${b19_home}" ] && [ -n "${b19_uid}" ]; then
+    heal_ctr="$(buildah from "${image}")"
+    heal_out="$(buildah run --user 0 "${heal_ctr}" -- sh -c "
+        find '${b19_home}' -xdev -type d ! \( -uid ${b19_uid} -gid 0 \) -print -exec chown ${b19_uid}:0 {} + ;
+        find '${b19_home}' -xdev -type d ! -perm -g=rwx -print -exec chmod g+rwX {} +
+    ")" || { buildah rm "${heal_ctr}" >/dev/null; exit 1; }
+    if [ -n "${heal_out}" ]; then
+      image="$(buildah commit --format docker --rm "${heal_ctr}")"
+      echo "buildah healed image=${image} home=${b19_home} dirs: $(printf '%s' "${heal_out}" | tr '\n' ' ')"
+    else
+      echo "buildah heal image=${image} home=${b19_home} clean, nothing to heal"
+      buildah rm "${heal_ctr}" >/dev/null
+    fi
+  fi
+fi
+
 # Embed the image ref AS the docker archive's reference (docker-archive:path:reference)
 # so a downstream `docker load` restores THIS tag and the compose stack finds it by tag —
 # never an anonymous archive. Empty IMAGE keeps the historical bare export.
