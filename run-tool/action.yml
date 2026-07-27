@@ -95,7 +95,12 @@ runs:
         ENV_VARS: ${{ inputs.env }}
         MOUNTS: ${{ inputs.mounts }}
         NETWORK: ${{ inputs.network }}
-        # An explicit input WINS; only an empty input falls through to run.sh's `always`
-        # default (`${VAR:-}` keeps an unset var unset, so the default still applies).
-        RUN_TOOL_PULL: ${{ inputs.pull }}
+        # An explicit input WINS; an empty input falls through to the CALLER's ambient
+        # RUN_TOOL_PULL (an instance override — act.mk sets one fleet-wide for its offline
+        # contract) and only then to run.sh's `always` default. A bare `RUN_TOOL_PULL:
+        # ${{ inputs.pull }}` would NOT do this: a composite step's `env:` entry always
+        # materializes the var (even "" — GHA has no way to conditionally omit a mapped
+        # key), so an empty input would CLOBBER the caller's env instead of falling
+        # through to it, breaking the override this input's own description promises.
+        RUN_TOOL_PULL: ${{ inputs.pull || env.RUN_TOOL_PULL }}
       run: bash "$GITHUB_ACTION_PATH/run.sh"
