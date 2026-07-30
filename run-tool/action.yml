@@ -16,6 +16,13 @@
 # imperative part kept in this versioned action so the rendered workflow stays
 # declarative (ci-resolver Law 2).
 #
+# A tool may also run WITHOUT a container: when the operator bakes it into the runner
+# image and names it in the RUN_TOOL_PREFER_LOCAL env allowlist, run.sh execs the host
+# binary instead. That is the forge twin of the make lowering's `m6e.prefer-local`, kept
+# as a runner env (not an input) because only the runner knows what it ships — so it needs
+# no workflow regeneration. Empty (the default) keeps every tool containerised. See the
+# refusals and the operator rule in run.sh.
+#
 # The image arrives as TWO inputs (image/version) and recomposed: image carries its
 # FULL path (the registry host embedded by ci-resolver via a ci.images var, or a bare
 # Docker-Hub namespace); version is the tag. An external ref carrying its own tag

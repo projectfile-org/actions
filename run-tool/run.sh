@@ -58,11 +58,17 @@ fi
 # ref) at render time. A line with NO `=` is a bare NAME (no value resolved) and is
 # forwarded by name — the graceful fallback to the runner's own OS env. We log only the
 # NAMES (left of the first `=`) so a forwarded secret value never reaches the log.
+#
+# env_pairs is the same list in the shape the HOST path needs (see prefer-local below):
+# `env NAME=VALUE… cmd` takes only ASSIGNMENTS, so a bare NAME is dropped there — it is
+# already in the runner's own environment, which a host run inherits outright.
 env_opts=()
+env_pairs=()
 env_names=""
 while IFS= read -r pair; do
   [ -n "${pair}" ] || continue
   env_opts+=(--env "${pair}")
+  [[ "${pair}" == *=* ]] && env_pairs+=("${pair}")
   env_names="${env_names:+${env_names} }${pair%%=*}"
 done <<< "${ENV_VARS:-}"
 
@@ -98,7 +104,54 @@ done
 net_opts=()
 [ -n "${NETWORK:-}" ] && net_opts=(--network "${NETWORK}")
 
+# Prefer a HOST binary over the container when the operator has baked the tool into the
+# runner image (the `COPY pf-cli/pf-bridge` case) and allowlisted it here. This is the
+# forge twin of the make lowering's `m6e.prefer-local` (m6e core/ci/020-executor.mk),
+# which ci-resolver does NOT lower: that key sits under the `m6e:` block, and it is set on
+# nearly every tool in the fleet, so it cannot discriminate WHICH binaries a given runner
+# actually ships. That knowledge belongs to the runner, so the switch is a runner env
+# allowlist — the same shape as the RUN_TOOL_PULL knob above.
+#
+# RUN_TOOL_PREFER_LOCAL holds whitespace- or comma-separated ENTRYPOINT names (the first
+# word of `run`). Empty (the default) => never prefer local, i.e. today's behaviour
+# byte-for-byte. Secure by default: a binary that merely happens to sit on the runner PATH
+# never silently displaces the pinned image; the operator names each one.
+#
+# Two hard refusals keep the host path SEMANTICALLY equal to the container path, since
+# neither can be honoured outside a container:
+#   * mounts  — a scanner's DB cache would silently vanish, and the tool would run against
+#               an empty DB and still exit 0 (a green scan that scanned nothing).
+#   * network — a `network: live` tool addresses compose services by NAME; off the
+#               container network that name does not resolve.
+# Either present => container, whatever the allowlist says.
+#
+# OPERATOR RULE: do NOT allowlist a tool on a runner pool that BUILDS that same tool. The
+# baked binary would check the project with the PREVIOUS release instead of the commit
+# under test — the projectfile/bridge dogfooding case.
+entrypoint="${RUN%% *}"
+prefer_local=no
+if [ -z "${RUN_TOOL_PREFER_LOCAL:-}" ]; then
+  prefer_reason="disabled (RUN_TOOL_PREFER_LOCAL empty)"
+elif [ -n "${MOUNTS:-}" ]; then
+  prefer_reason="refused: tool declares mounts [${MOUNTS}]"
+elif [ -n "${NETWORK:-}" ]; then
+  prefer_reason="refused: tool joins network [${NETWORK}]"
+else
+  prefer_reason="not allowlisted in [${RUN_TOOL_PREFER_LOCAL}]"
+  for allowed in ${RUN_TOOL_PREFER_LOCAL//,/ }; do
+    [ "${allowed}" = "${entrypoint}" ] || continue
+    if local_path=$(command -v "${entrypoint}" 2>/dev/null); then
+      prefer_local=yes
+      prefer_reason="allowlisted, resolved to ${local_path}"
+    else
+      prefer_reason="allowlisted but absent from PATH — falling back to the image"
+    fi
+    break
+  done
+fi
+
 echo "run-tool ref=${ref} run=${RUN} env=[${env_names}] mounts=[${MOUNTS:-}] network=[${NETWORK:-}] pull=${RUN_TOOL_PULL:-always}"
+echo "run-tool prefer-local=${prefer_local} entrypoint=${entrypoint} :: ${prefer_reason}"
 # --pull always: tool images ride MUTABLE tags (BASE_IMAGE_DEFAULT_VERSION || latest),
 # so a runner that has already cached the tag would otherwise run a STALE image forever —
 # both docker and podman default to `--pull missing`, which only fetches an ABSENT tag, not
@@ -135,8 +188,16 @@ fi
 # below before we propagate it (the container is `--rm`, so the code is the only
 # post-mortem left).
 rc=0
-docker run --rm --pull "${pull}" --volume "${PWD}":/app/ws --workdir /app/ws      \
-  "${net_opts[@]}" "${mount_opts[@]}" "${env_opts[@]}" "${ref}" "${cmd[@]}" || rc=$?
+if [ "${prefer_local}" = yes ]; then
+  # HOST path: the workspace IS the cwd (the container binds this same $PWD at /app/ws and
+  # sets it as the workdir), so the tool sees an identical tree with no bind at all. Only
+  # the ASSIGNMENTS are re-applied; the runner's own environment is inherited, which is
+  # what the container path emulates with its by-NAME forwarding.
+  env "${env_pairs[@]}" "${cmd[@]}" || rc=$?
+else
+  docker run --rm --pull "${pull}" --volume "${PWD}":/app/ws --workdir /app/ws      \
+    "${net_opts[@]}" "${mount_opts[@]}" "${env_opts[@]}" "${ref}" "${cmd[@]}" || rc=$?
+fi
 
 if [ "${rc}" -ne 0 ]; then
   # What we are doing: turn an opaque "RUN exit status N" into a named cause so a CI
@@ -151,7 +212,10 @@ if [ "${rc}" -ne 0 ]; then
     124) hint="timeout(1) deadline exceeded" ;;
     *)   hint="tool exit status" ;;
   esac
-  echo "run-tool FAILED rc=${rc} ref=${ref} run=[${RUN}] :: ${hint}" >&2
+  # Name the site that ACTUALLY ran: on the host path `ref` is the image we bypassed, so
+  # reporting it would send triage to the wrong binary.
+  if [ "${prefer_local}" = yes ]; then site="host=${local_path}"; else site="ref=${ref}"; fi
+  echo "run-tool FAILED rc=${rc} ${site} run=[${RUN}] :: ${hint}" >&2
   # On a kill-signal exit, surface host memory — the usual culprit when many tool
   # runs share one host runner — so triage needs no shell access to the box.
   case "${rc}" in
