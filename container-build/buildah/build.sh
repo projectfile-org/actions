@@ -79,6 +79,23 @@ retry_delay="${M6E_BUILDAH_RETRY_DELAY:-5}"
 # containers-storage inconsistencies a replay resolves: each is a record pointing at
 # something a concurrent writer removed, never a defect in this build’s Dockerfile.
 transient='layer not known|image not known|identifier is not an image'
+# Per-build memory cap. The runner cgroup is one shared ceiling (CAPACITY × per-job
+# budget — see r8e/forgejo-runner AGENTS.md); without a per-build cap every heavy RUN
+# (elm --optimize, a GCC compile) fans out at full nproc inside that shared ceiling and
+# the kernel OOM-killer reaps the largest allocation mid-step (exit 137, host idle).
+# --memory lands a real memory.max on each RUN container: the delegate-cgroup entrypoint
+# already enables the memory controller down the subtree, so buildah’s cap is honored by
+# nested rootless podman. --memory-swap lets a transient peak spill to the host’s swap
+# instead of dying; it is memory PLUS swap, so 4g+8g = 4g swap headroom. Both empty =>
+# no cap (local `make build` stays uncapped, the graceful default).
+mem_args=()
+if [ -n "${M6E_BUILDAH_MEMORY:-}" ]; then
+  mem_args+=(--memory "${M6E_BUILDAH_MEMORY}")
+  if [ -n "${M6E_BUILDAH_MEMORY_SWAP:-}" ]; then
+    mem_args+=(--memory-swap "${M6E_BUILDAH_MEMORY_SWAP}")
+  fi
+  echo "buildah build memory=${M6E_BUILDAH_MEMORY} swap=${M6E_BUILDAH_MEMORY_SWAP:-<none>} artifact=${ARTIFACT_NAME}"
+fi
 # The log rides the job workspace, NOT $TMPDIR: /tmp is a 64m tmpfs on the runner and
 # a large build would fill it.
 build_log=".buildah-build-${ARTIFACT_NAME}.log"
@@ -90,7 +107,7 @@ while true; do
   # A failed attempt must not leave a stale id behind for the next one to read.
   rm --force iid.txt
   set +e
-  env -u SOURCE_DATE_EPOCH BUILDAH_LAYERS="${buildah_layers}" buildah build --format docker --pull=newer "${build_args[@]}" "${build_contexts[@]}" "${label_args[@]+"${label_args[@]}"}" "${target_args[@]+"${target_args[@]}"}" --iidfile iid.txt "${CONTEXT}" 2>&1 | tee "${build_log}"
+  env -u SOURCE_DATE_EPOCH BUILDAH_LAYERS="${buildah_layers}" buildah build --format docker --pull=newer "${mem_args[@]+"${mem_args[@]}"}" "${build_args[@]}" "${build_contexts[@]}" "${label_args[@]+"${label_args[@]}"}" "${target_args[@]+"${target_args[@]}"}" --iidfile iid.txt "${CONTEXT}" 2>&1 | tee "${build_log}"
   rc="${PIPESTATUS[0]}"
   set -e
   [ "${rc}" -eq 0 ] && break
