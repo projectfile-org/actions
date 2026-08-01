@@ -144,7 +144,12 @@ if [ "${M6E_BUILDAH_HEAL:-Y}" != "N" ] && [ "${buildah_layers}" = "true" ]; then
   b19_home="$(printf '%s\n' "${img_env}" | sed -n 's/^B19_HOME=//p' | head -1)"
   b19_uid="$(printf '%s\n' "${img_env}" | sed -n 's/^B19_UID=//p' | head -1)"
   if [ -n "${b19_home}" ] && [ -n "${b19_uid}" ]; then
-    heal_ctr="$(buildah from "${image}")"
+    # --format docker: `buildah from` defaults to oci, whose container config
+    # HAS no Healthcheck field — the parent's Docker HEALTHCHECK is dropped on
+    # the from→commit round-trip (the source of the `service_healthy` hang:
+    # consumers depending on a sidecar's HEALTHCHECK never see it become
+    # healthy). A docker-format container carries it through to the commit.
+    heal_ctr="$(buildah from --format docker "${image}")"
     heal_out="$(buildah run --user 0 "${heal_ctr}" -- sh -c "
         find '${b19_home}' -xdev -type d ! \( -uid ${b19_uid} -gid 0 \) -print -exec chown ${b19_uid}:0 {} + ;
         find '${b19_home}' -xdev -type d ! -perm -g=rwx -print -exec chmod g+rwX {} +
