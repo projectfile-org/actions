@@ -96,6 +96,13 @@ runs:
         M6E_ARCHIVE_COMPRESSION: ${{ env.M6E_ARCHIVE_COMPRESSION }}
         M6E_ARCHIVE_COMPRESSION_LEVEL: ${{ env.M6E_ARCHIVE_COMPRESSION_LEVEL }}
         M6E_BUILDAH_LAYERS: ${{ env.M6E_BUILDAH_LAYERS }}
+        # Per-build memory cap. Same forwarding rule as the toggles above — WITHOUT
+        # these two lines build.sh reads its own defaults (empty => uncapped), and the
+        # cap the runner sets on its service never reaches a build: a runaway RUN then
+        # eats the whole shared plane cgroup and the kernel kills an arbitrary victim,
+        # which reports as `signal: killed` with no exit status and no owner.
+        M6E_BUILDAH_MEMORY: ${{ env.M6E_BUILDAH_MEMORY }}
+        M6E_BUILDAH_MEMORY_SWAP: ${{ env.M6E_BUILDAH_MEMORY_SWAP }}
       run: bash "$GITHUB_ACTION_PATH/build.sh"
     # @v3 (NOT v7) because buildah is the FORGEJO backend: Forgejo's artifact store
     # speaks the v1 protocol, and upload-artifact@v4+ (`@actions/artifact` v2) refuses a
