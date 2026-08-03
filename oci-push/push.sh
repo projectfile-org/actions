@@ -91,10 +91,25 @@ echo "oci-push version=${VERSION:-<none>} repo=${image_repo} tags=[${tags[*]}]"
 # half-published cascade surfaces immediately rather than leaving a moved
 # `latest` pointing at an unpushed digest. docker-archive reads the (single)
 # image in the tar regardless of its stamped name; docker:// names it at the dest.
+#
+# --format v2s2: the OCI image spec HAS no healthcheck field, so an OCI manifest
+# at the registry DROPS the b19 HEALTHCHECK — the third and last loss point,
+# AFTER the two build-plane ones. skopeo defaults to the SOURCE format, which the
+# docker-archive supplies as v2s2, so this looks like a no-op — it is not. skopeo
+# must RE-compress the archive’s uncompressed layers for the registry, and one
+# zstd layer (from the runner containers.conf, or a zstd blob already in the
+# registry that skopeo reuses) makes v2s2 unrepresentable: Docker v2s2 has no
+# zstd layer media type, so the copy silently converts the manifest to OCI and
+# the healthcheck goes with it. Pinning the format alone would then FAIL the
+# copy ("compression using zstd required together with format …v2s2, which does
+# not support it"), so gzip is forced too — the only compression v2s2 carries.
+# Together they make the published manifest deterministic, healthcheck included.
 for t in "${tags[@]}"; do
   ref="${image_repo}:${t}"
-  echo "oci-push copying archive=${archive} -> ref=${ref}"
-  skopeo copy --dest-authfile "${authfile}" --digestfile "${digestfile}"      \
+  echo "oci-push copying archive=${archive} -> ref=${ref} format=v2s2 compression=gzip"
+  skopeo copy --format v2s2                                                   \
+    --dest-compress-format gzip --dest-force-compress-format                  \
+    --dest-authfile "${authfile}" --digestfile "${digestfile}"                \
     "docker-archive:${archive}" "docker://${ref}"
 done
 
