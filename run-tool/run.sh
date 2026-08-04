@@ -170,10 +170,11 @@ pull="${RUN_TOOL_PULL:-always}"
 #
 # Double-quote in RUN forces the sh path on purpose: a quoted arg like
 # `.scripts/publish-go-module.sh "${{ github.ref_name }}"` is sh syntax — the
-# quotes ask the shell to strip them. The word-split path leaves quotes as LITERAL
-# characters (no shell to consume them), so the script receives `"v1.0.7"` instead
-# of `v1.0.7`. Treating `"` as shell-meta routes such runs through `sh -c`, which
-# strips the quotes and hands the script the clean argument the author expected.
+# quotes ask the shell to strip them AND preserve the space inside. The word-split
+# path strips a surrounding quote-pair per word (see below) but cannot preserve an
+# interior space, so a quoted multi-word arg like `"a b"` would split into `"a` +
+# `b"`. Treating `"` as shell-meta routes such runs through `sh -c`, which handles
+# both the strip and the space.
 shell_meta_re='[&|;<>"]'
 dollar_paren="\$("
 backtick='`'
@@ -183,6 +184,22 @@ if [[ "${RUN}" =~ ${shell_meta_re} || "${RUN}" == *"${dollar_paren}"* || "${RUN}
 else
   echo "run-tool shell-wrap=no (plain command, word-split)"
   read -ra cmd <<< "${RUN}"
+  # Strip ONE matching pair of surrounding quotes from each word. The word-split
+  # path has no shell to consume quote syntax, so a quoted token like
+  # `'dist/**/*.html'` reaches the tool with the quotes as LITERAL characters
+  # (html-validate then matches a file literally named 'dist/**/*.html' and finds
+  # nothing). A shell would strip them; this mirrors that for the no-shell path.
+  # Only a FULL wrap is stripped — interior or unbalanced quotes stay literal, so
+  # a value that genuinely contains a quote (a password, a grep pattern) is never
+  # mangled. Single AND double are handled even though `"` already routes to the
+  # sh -c path above: this is the word-split path's own contract (strip a wrap),
+  # not an assumption about how the RUN arrived here.
+  for i in "${!cmd[@]}"; do
+    w="${cmd[i]}"
+    if [[ ${#w} -ge 2 ]] && [[ "${w:0:1}" == "${w: -1}" ]] && [[ "${w:0:1}" == \' || "${w:0:1}" == \" ]]; then
+      cmd[i]="${w:1:${#w}-2}"
+    fi
+  done
 fi
 # Capture the exit code instead of letting `set -e` abort: a non-zero run is DECODED
 # below before we propagate it (the container is `--rm`, so the code is the only
