@@ -122,13 +122,45 @@ _published_config() {                       # $@ → skopeo transport + flags
   skopeo inspect --config --raw "$@" | jq --sort-keys '.config'
 }
 
+# Bounded registry copy: the publish is a network/process crossing, so a registry
+# blip (a transient 500 mid blob upload, a dropped connection) must not abort a
+# whole release. skopeo ships --retry-times, but containers/image does NOT treat
+# every upload 5xx as retryable (a mid-session blob failure can be classified
+# fatal), so the flag alone is unreliable for the exact failure seen here. Wrap
+# the copy in a loop that ALWAYS retries, with exponential backoff+jitter (same
+# shape as m6e's compose-pull) so a flapping registry costs seconds, not a
+# rebuild. A copy is idempotent at the dest: re-uploading a blob the registry
+# already has is a no-op, so retrying after a partial upload is safe. ONLY the
+# copy retries; login and verify stay single-shot. M6E_OCI_PUSH_RETRIES=1 opts out.
+_op_retries="${M6E_OCI_PUSH_RETRIES:-3}"
+_op_backoff="${M6E_OCI_PUSH_BACKOFF:-2}"
+_op_copy() {                                 # $@ → everything after `skopeo copy`
+  local _attempt=1 _delay _rc
+  while :; do
+    # set +e: a failed copy is data for the retry test, not a script exit.
+    set +e
+    skopeo copy "$@"
+    _rc=$?
+    set -e
+    [ "${_rc}" -eq 0 ] && return 0
+    if [ "${_attempt}" -ge "${_op_retries}" ]; then
+      echo "oci-push copy FAILED rc=${_rc} ref=${ref} attempts=${_attempt} exhausted" >&2
+      return "${_rc}"
+    fi
+    _delay=$((_op_backoff * (2 ** (_attempt - 1)) + RANDOM % (_op_backoff + 1)))
+    echo "oci-push copy failed rc=${_rc} ref=${ref} attempt=${_attempt}/${_op_retries} — retrying in ${_delay}s" >&2
+    sleep "${_delay}"
+    _attempt=$((_attempt + 1))
+  done
+}
+
 # Verify after the FIRST tag, before the rest: the cascade ends with `latest`
 # (the tag consumers float on), so aborting here keeps a bad image off it.
 verified=
 for t in "${tags[@]}"; do
   ref="${image_repo}:${t}"
   echo "oci-push copying archive=${archive} -> ref=${ref} format=v2s2 compression=gzip"
-  skopeo copy --format v2s2                                                   \
+  _op_copy --format v2s2                                                      \
     --dest-compress-format gzip --dest-force-compress-format                  \
     --dest-authfile "${authfile}" --digestfile "${digestfile}"                \
     "docker-archive:${archive}" "docker://${ref}"

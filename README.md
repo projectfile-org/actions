@@ -106,7 +106,7 @@ within a major). This matches the workspace pinned-dependency rule.
 |-------------------|---------|----------------------------------------------------------|
 | `container-build/buildx`  | landed  | `docker/setup-buildx-action` → OCI-tar → cell artifact |
 | `container-build/buildah` | landed  | buildah build → `oci-archive:` tar → cell artifact     |
-| `oci-push`        | landed  | `docker load` cell tar → login → (re-tag) → `docker push` |
+| `oci-push`        | landed  | skopeo copy cell tar → registry (no daemon load); retry+backoff on the copy |
 | `image-scan`      | planned | scanner against `oci-archive:<artifact>.tar` (daemonless)|
 | `secrets-provision` | landed | `org.projectfile.ci.secrets` declarations → `.secrets/` tree (value-write / docker-run dispatcher) |
 
@@ -128,10 +128,15 @@ declarations and calls the same dispatch logic.
 The build→scan hand-off is an **OCI archive tar** (`<artifact-name>.tar`): no
 registry, no credentials for the intra-pipeline hop. `oci-push` is the CONSUMER end
 of that same tar at `publish` time — ci-resolver emits the download-artifact step,
-then this action loads, logs in, and pushes. It is the one action that takes
+then this action logs in and **copies the tar straight to the registry with
+skopeo** (`skopeo copy docker-archive:<tar> docker://<ref>`), never loading it
+into the daemon’s store (the old load+retag+push was the single biggest
+disk-bloat source on the shared runner). It is the one action that takes
 credentials, and only by NAME: the leaf declares `env: [REGISTRY_USERNAME,
 REGISTRY_PASSWORD]` and ci-resolver's per-target credentials overlay binds those
 NAMES to secret refs on the push job (a composite action's bash reads the job's OS
 env, never the `secrets` context). The push ref is the basename `container-build`
-stamped into the tar; a `registry:` input (the leaf's `registry:` var) re-tags it
-under a private host, ABSENT keeps the Docker Hub default.
+stamped into the tar; a `registry:` input (the leaf’s `registry:` var) re-prefixes
+it under a private host, ABSENT keeps the Docker Hub default. The copy is wrapped
+in a bounded retry+exponential-backoff loop (`M6E_OCI_PUSH_RETRIES` /
+`M6E_OCI_PUSH_BACKOFF`) so a transient registry 5xx doesn’t abort a release.
