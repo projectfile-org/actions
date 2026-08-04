@@ -104,6 +104,27 @@ echo "oci-push version=${VERSION:-<none>} repo=${image_repo} tags=[${tags[*]}]"
 # copy ("compression using zstd required together with format …v2s2, which does
 # not support it"), so gzip is forced too — the only compression v2s2 carries.
 # Together they make the published manifest deterministic, healthcheck included.
+#
+# Publish-hop verification: what the registry serves MUST be what we built. The
+# push is a RE-ENCODE (layers re-compressed, manifest re-serialised), so it can
+# silently downgrade the image — an OCI manifest carries no Healthcheck, OnBuild
+# or Shell field and drops all three. NOTHING upstream can catch that: a linter
+# or scanner run on the build artifact reads the tar, which is still correct, so
+# it stays green while the published image is broken. The assertion only means
+# something HERE, against the bytes the registry actually returns.
+#
+# Strict equality on the whole runtime config, not a healthcheck special-case:
+# the publish must not alter the image AT ALL, so every dropped attribute is
+# caught by the same rule and no future field needs a new check. Cost is one
+# config blob (tens of KB) — `--config` fetches that descriptor alone, never the
+# layers. M6E_PUBLISH_VERIFY=N opts out.
+_published_config() {                       # $@ → skopeo transport + flags
+  skopeo inspect --config --raw "$@" | jq --sort-keys '.config'
+}
+
+# Verify after the FIRST tag, before the rest: the cascade ends with `latest`
+# (the tag consumers float on), so aborting here keeps a bad image off it.
+verified=
 for t in "${tags[@]}"; do
   ref="${image_repo}:${t}"
   echo "oci-push copying archive=${archive} -> ref=${ref} format=v2s2 compression=gzip"
@@ -111,6 +132,20 @@ for t in "${tags[@]}"; do
     --dest-compress-format gzip --dest-force-compress-format                  \
     --dest-authfile "${authfile}" --digestfile "${digestfile}"                \
     "docker-archive:${archive}" "docker://${ref}"
+
+  if [ -z "${verified}" ] && [ "${M6E_PUBLISH_VERIFY:-Y}" != "N" ]; then
+    verified="${image_repo}@$(cat "${digestfile}")"
+    echo "oci-push verifying ref=${verified} (published config vs built config)"
+    _built="$(_published_config "docker-archive:${archive}")"
+    _live="$(_published_config --authfile "${authfile}" "docker://${verified}")"
+    if [ "${_built}" != "${_live}" ]; then
+      echo "oci-push VERIFY FAILED ref=${verified} — the push altered the image config" >&2
+      echo "oci-push  (< built, > published; a lost Healthcheck means the manifest was downgraded to oci)" >&2
+      diff <(printf '%s\n' "${_built}") <(printf '%s\n' "${_live}") >&2 || true
+      exit 1
+    fi
+    echo "oci-push verified ref=${verified} config=identical keys=$(printf '%s' "${_built}" | jq 'keys | length')"
+  fi
 done
 
 # Emit the content digest of what we just published, so a downstream signer/attester
