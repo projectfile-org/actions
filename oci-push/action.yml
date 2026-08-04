@@ -62,7 +62,8 @@ outputs:
     # The content digest (sha256:…) of the published image, tag-independent (every
     # cascade tag points at the same image). A downstream cosign sign/attest step
     # consumes `${repo}@${digest}` so the signature binds the immutable content, not a
-    # mutable tag. push.sh also drops it in $M6E_DIGEST_FILE for the in-job fused signer.
+    # mutable tag. push.sh also drops it in $M6E_DIGEST_FILE for the in-job fused signer,
+    # and the tag cascade in $M6E_TAGS_FILE for the in-job events emit step.
     description: Content digest (sha256:…) of the pushed image.
     value: ${{ steps.push.outputs.digest }}
 runs:

@@ -165,3 +165,13 @@ if [ -n "${GITHUB_OUTPUT:-}" ]; then
   printf 'digest=%s\n' "${digest}" >> "${GITHUB_OUTPUT}"
 fi
 printf '%s\n' "${ref_by_digest}" > "${M6E_DIGEST_FILE:-image.digest}"
+
+# Export the tag cascade the same workspace-file way, for the events emit step
+# ci-resolver renders after this action (a tool declaring `emit:`). A downstream
+# consumer must know WHICH tags moved — `latest` moving is a different fact from a
+# patch tag appearing — and the cascade is derived HERE, from VERSION, so reading it
+# back beats reimplementing the semver fan-out in the emitting step. A JSON array,
+# because the envelope carries it verbatim; every element is a semver token or the
+# load tag, so no element can carry a quote to escape.
+tags_json="$(printf '"%s",' "${tags[@]}")"
+printf '[%s]\n' "${tags_json%,}" > "${M6E_TAGS_FILE:-image.tags}"
