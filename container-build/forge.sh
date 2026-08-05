@@ -6,14 +6,15 @@
 # What we are doing: derive the NORMALIZED build-pipeline id (gha-buildx,
 # forgejo-buildah, …) this run stamps as the org.m6e.ci.build-by label — the
 # same vocabulary the make plane uses (make-buildx / make-buildah). The forge
-# half comes from the runner's own markers: Forgejo/Gitea runners export
-# FORGEJO_ACTIONS/GITEA_ACTIONS as PROCESS env (unlike job `env:`, which the
-# Forgejo runner drops for composite actions), GitHub sets neither. The caller
-# sets BACKEND=buildx|buildah before sourcing. SHARED by every container-build
+# half comes from the runner's own marker: a Forgejo runner exports
+# FORGEJO_ACTIONS as PROCESS env (unlike job `env:`, which the Forgejo runner
+# drops for composite actions), GitHub sets none. Runner v13 dropped the Gitea
+# compatibility vars, so FORGEJO_ACTIONS is the whole signal. The caller sets
+# BACKEND=buildx|buildah before sourcing. SHARED by every container-build
 # backend so the id is computed in one place. SOURCED, not executed.
 
 forge="gha"
-if [ -n "${FORGEJO_ACTIONS:-}${GITEA_ACTIONS:-}" ]; then
+if [ -n "${FORGEJO_ACTIONS:-}" ]; then
   forge="forgejo"
 fi
 export M6E_BUILD_BY="${M6E_BUILD_BY:-${forge}-${BACKEND:?forge.sh needs BACKEND}}"
