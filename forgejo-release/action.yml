@@ -17,9 +17,12 @@
 # Create-then-attach idempotency: `tea release create` errors HTTP 409 if a release
 # for the tag already exists (the 2nd..Nth matrix cell, a re-run, or a manual
 # pre-create). The first cell creates; later cells fall back to
-# `tea release attachment create`. The tag is the release title (tea's SDK requires
-# a non-empty title — the historical `tea release create --tag`-only call failed
-# with "title is empty").
+# `tea release assets create` — the subcommand is `assets` (aliases `asset`, `a`);
+# tea has no `attachment` verb, and urfave/cli answers an unknown one by falling
+# through to the parent `releases` action instead of reporting it. The fallback
+# clobbers a same-named attachment first, because Forgejo accepts duplicates. The
+# tag is the release title (tea's SDK requires a non-empty title — the historical
+# `tea release create --tag`-only call failed with "title is empty").
 #
 # Auth is NOT an input: the leaf declares `env: [FORGEJO_TOKEN]` and ci-resolver's
 # per-target credentials overlay binds that NAME to a secret ref on THIS job. A
