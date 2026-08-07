@@ -100,6 +100,19 @@ so a non-mirrored target can override it with a full-URL ref later.
 Consumers pin `@v1` (a moving major tag the library keeps backward-compatible
 within a major). This matches the workspace pinned-dependency rule.
 
+`v1` moves only when you move it. A merge to `main` changes nothing that CI
+runs, because every consumer resolves the tag, not the branch. Release a fix in
+two steps:
+
+```sh
+git push origin main
+git tag --sign --force --message 'v1' v1 <commit>
+git push --force origin v1
+```
+
+A fix that looks landed but still does not run is almost always a `v1` that
+stayed behind.
+
 ## Actions
 
 | Provider          | Status  | Realisation                                              |
