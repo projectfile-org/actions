@@ -39,15 +39,25 @@ if [ ! -f "${asset}" ]; then
 	exit 1
 fi
 
+# First output of the step. Without it a cell that dies during step setup and one
+# that blocks on the first tea call look identical: both print nothing at all.
+log "cell ${GOOS}/${GOARCH} releasing ${name} at ${VERSION} on ${GITHUB_SERVER_URL}"
+
 # Isolate tea's config to a per-job tmpdir (tea resolves it via XDG_CONFIG_HOME).
 # The host-mode runner persists ~/.config/tea/config.yml across jobs, so a bare
 # `tea login add` collides on re-runs ("login name 'ci' has already been used")
 # and races under capacity>1. A fresh empty config makes the add stateless.
 export XDG_CONFIG_HOME
 XDG_CONFIG_HOME="$(mktemp -d)"
+# Every tea call reads stdin from /dev/null. `timeout` runs its child in a NEW
+# process group, and a background-group process that touches the controlling TTY
+# gets SIGTTIN and STOPS — a stopped process never handles the SIGTERM timeout
+# sends at expiry, so the guard against hanging becomes an unkillable hang. The
+# runner attaches a TTY, so this is not theoretical. /dev/null also turns any
+# prompt into an immediate EOF failure, which is what CI wants anyway.
 timeout "${timeout_s}" tea login add --name ci                  \
                                      --url "${GITHUB_SERVER_URL}" \
-                                     --token "${FORGEJO_TOKEN}"
+                                     --token "${FORGEJO_TOKEN}" </dev/null
 
 # Bounded attach: the upload is a network crossing that every losing cell makes
 # against the SAME release, so it gets timeout + retry + exponential backoff with
@@ -60,13 +70,13 @@ attach() {
 	while :; do
 		if timeout "${timeout_s}" tea release assets delete --confirm                    \
 		                                                    --repo "${GITHUB_REPOSITORY}" \
-		                                                    "${VERSION}" "${name}"; then
+		                                                    "${VERSION}" "${name}" </dev/null; then
 			log "dropped stale attachment ${name} on ${VERSION}"
 		else
 			log "no stale attachment ${name} on ${VERSION}"
 		fi
 		if timeout "${timeout_s}" tea release assets create --repo "${GITHUB_REPOSITORY}" \
-		                                                    "${VERSION}" "${asset}"; then
+		                                                    "${VERSION}" "${asset}" </dev/null; then
 			log "attached ${name} to release ${VERSION} on attempt ${attempt}"
 			return 0
 		fi
@@ -83,8 +93,9 @@ attach() {
 
 # Create wins on the first cell; attach wins on cells 2..N (HTTP 409 — the release
 # already exists). The tag is the title (tea SDK requires non-empty).
-if timeout "${timeout_s}" tea release create --repo "${GITHUB_REPOSITORY}" \
-                                             --tag "${VERSION}" --title "${VERSION}" --asset "${asset}"; then
+if timeout "${timeout_s}" tea release create --repo "${GITHUB_REPOSITORY}"                       \
+                                             --tag "${VERSION}" --title "${VERSION}"              \
+                                             --asset "${asset}" </dev/null; then
 	log "created release ${VERSION} with ${name}"
 else
 	log "release ${VERSION} exists, attaching ${name}"
