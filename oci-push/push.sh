@@ -20,9 +20,36 @@
 set -euo pipefail
 
 archive="${ARTIFACT_NAME}.tar"
-: "${IMAGE:?oci-push: IMAGE (the basename ref) is required}"
-: "${REGISTRY_USERNAME:?oci-push: REGISTRY_USERNAME must be bound (credentials overlay)}"
-: "${REGISTRY_PASSWORD:?oci-push: REGISTRY_PASSWORD must be bound (credentials overlay)}"
+
+# Destinations. REFS carries one `<sink> <ref>` line per place this archive is
+# published, each ref COMPOSED by the document that declared the sink — so this
+# action never assumes a path shape, which is what lets one build land nested on
+# GHCR and flattened on Docker Hub. REGISTRY + IMAGE remain the single-destination
+# spelling: a project that declares no publish route still pushes exactly where it
+# always did, and this file needs no branch beyond building the list.
+sink_names=()
+sink_repos=()
+if [ -n "${REFS:-}" ]; then
+  while read -r _sink _ref; do
+    [ -n "${_ref}" ] || continue
+    sink_names+=("${_sink}")
+    # A composed ref may carry the plane's tag; the cascade below supplies its
+    # own, so only the repository half is kept — the same rule as the legacy
+    # path, applied in one place.
+    sink_repos+=("${_ref%:*}")
+  done <<< "${REFS}"
+fi
+if [ "${#sink_repos[@]}" -eq 0 ]; then
+  : "${IMAGE:?oci-push: IMAGE (the basename ref) is required when REFS is empty}"
+  # The historical composition: repo half of the load ref, prefixed with the
+  # registry when one is given (empty => Docker Hub).
+  _legacy="${IMAGE%:*}"
+  if [ -n "${REGISTRY:-}" ]; then
+    _legacy="${REGISTRY}/${_legacy}"
+  fi
+  sink_names+=("")
+  sink_repos+=("${_legacy}")
+fi
 
 # skopeo’s docker-archive: transport requires a seekable UNcompressed file (it does
 # random-access Seek on the tar, and --dest-compress is silently ignored for this
@@ -53,21 +80,55 @@ trap 'rm -f "${authfile}" "${digestfile}"${decompressed:+ "${ARTIFACT_NAME}.tar"
 # but mktemp already created it, and re-creating racily is worse than seeding).
 printf '{}' > "${authfile}"
 
-# Login target + push prefix: a bare REGISTRY (empty) means Docker Hub. skopeo
-# needs an explicit server for login (docker.io), whereas docker login defaulted
-# silently; image_repo is the repo half prefixed with the registry when given.
-login_server="${REGISTRY:-docker.io}"
-echo "oci-push logging in server=${login_server} user=${REGISTRY_USERNAME} registry=${REGISTRY:-<docker-hub>}"
-printf '%s' "${REGISTRY_PASSWORD}" | skopeo login --authfile "${authfile}"      \
-  --username "${REGISTRY_USERNAME}" --password-stdin "${login_server}"
+# Credentials key on the SINK NAME, never the host: two accounts on one registry
+# need two secrets, which a host-keyed scheme cannot hold. <SINK>_REGISTRY_USERNAME
+# / _PASSWORD win when bound; the unprefixed pair remains the fleet default, so a
+# single-destination project binds nothing new.
+_cred() {                                    # $1 sink, $2 USERNAME|PASSWORD → value
+  local _sink="$1" _kind="$2" _name
+  if [ -n "${_sink}" ]; then
+    _name="$(printf '%s' "${_sink}" | tr '[:lower:]-' '[:upper:]_')_REGISTRY_${_kind}"
+    if [ -n "${!_name:-}" ]; then
+      printf '%s' "${!_name}"
+      return 0
+    fi
+  fi
+  _name="REGISTRY_${_kind}"
+  printf '%s' "${!_name:-}"
+}
 
-# Derive the repo path every cascade tag shares: the loaded ref minus its tag
-# (everything left of the LAST colon), prefixed with the registry host when one
-# is given (empty => Docker Hub, no prefix).
-image_repo="${IMAGE%:*}"
-if [ -n "${REGISTRY}" ]; then
-  image_repo="${REGISTRY}/${image_repo}"
-fi
+# The registry to log in to is the ref's own first component. skopeo needs an
+# explicit server, and a first component carrying no `.`, no `:` and not
+# `localhost` is a Docker Hub NAMESPACE rather than a host — the same reference
+# grammar the build plane refuses a bare word under.
+_login_server() {                            # $1 repo ref → server
+  local _head="${1%%/*}"
+  case "${_head}" in
+    localhost|*.*|*:*) printf '%s' "${_head}" ;;
+    *) printf 'docker.io' ;;
+  esac
+}
+
+# One authfile holds every server, so each destination logs in once, up front. A
+# failed login aborts before any copy: half a fan-out is worse than none.
+for _i in "${!sink_repos[@]}"; do
+  _sink="${sink_names[${_i}]}"
+  _server="$(_login_server "${sink_repos[${_i}]}")"
+  _user="$(_cred "${_sink}" USERNAME)"
+  _pass="$(_cred "${_sink}" PASSWORD)"
+  if [ -z "${_user}" ] || [ -z "${_pass}" ]; then
+    echo "oci-push: no credentials for sink=${_sink:-<default>} server=${_server} — bind ${_sink:+$(printf '%s' "${_sink}" | tr '[:lower:]-' '[:upper:]_')_}REGISTRY_USERNAME/_PASSWORD" >&2
+    exit 1
+  fi
+  echo "oci-push logging in sink=${_sink:-<default>} server=${_server} user=${_user}"
+  printf '%s' "${_pass}" | skopeo login --authfile "${authfile}"                \
+    --username "${_user}" --password-stdin "${_server}"
+done
+
+# The FIRST destination is the primary: it carries the verify pass and the digest
+# the signer reads. Declaration order is the route's order, so the project decides
+# which registry that is.
+image_repo="${sink_repos[0]}"
 
 # Lower the git VERSION into the tag set to publish. A STABLE semver X.Y.Z fans out
 # to the moving heads X and X.Y plus `latest`, so consumers can pin loosely (`:1`,
@@ -154,11 +215,19 @@ _op_copy() {                                 # $@ → everything after `skopeo c
   done
 }
 
-# Verify after the FIRST tag, before the rest: the cascade ends with `latest`
-# (the tag consumers float on), so aborting here keeps a bad image off it.
+# Two dimensions, one archive: every DESTINATION the route declares, and within
+# each the SEMVER cascade. The outer loop is what makes a build land nested on one
+# registry and flattened on another from the same bits — the refs were composed by
+# the document, so nothing here knows which is which.
+#
+# Verify after the very FIRST copy, before the rest: the cascade ends with `latest`
+# (the tag consumers float on), so aborting here keeps a bad image off it. One
+# verify covers every destination — the same archive is copied to all of them, so a
+# re-encode defect shows on the first.
 verified=
+for _repo in "${sink_repos[@]}"; do
 for t in "${tags[@]}"; do
-  ref="${image_repo}:${t}"
+  ref="${_repo}:${t}"
   echo "oci-push copying archive=${archive} -> ref=${ref} format=v2s2 compression=gzip"
   _op_copy --format v2s2                                                      \
     --dest-compress-format gzip --dest-force-compress-format                  \
@@ -166,7 +235,7 @@ for t in "${tags[@]}"; do
     "docker-archive:${archive}" "docker://${ref}"
 
   if [ -z "${verified}" ] && [ "${M6E_PUBLISH_VERIFY:-Y}" != "N" ]; then
-    verified="${image_repo}@$(cat "${digestfile}")"
+    verified="${_repo}@$(cat "${digestfile}")"
     echo "oci-push verifying ref=${verified} (published config vs built config)"
     _built="$(_published_config "docker-archive:${archive}")"
     _live="$(_published_config --authfile "${authfile}" "docker://${verified}")"
@@ -178,6 +247,7 @@ for t in "${tags[@]}"; do
     fi
     echo "oci-push verified ref=${verified} config=identical keys=$(printf '%s' "${_built}" | jq 'keys | length')"
   fi
+done
 done
 
 # Emit the content digest of what we just published, so a downstream signer/attester

@@ -57,6 +57,19 @@ inputs:
     description: Push-target registry to log in to and prefix the push ref (OUTPUT_REGISTRY; empty => Docker Hub).
     required: false
     default: ""
+  refs:
+    # One `<sink> <ref>` line per destination this archive publishes to, each ref
+    # COMPOSED by the document that declared the sink (org.projectfile.sinks.<name>.ref
+    # under publish.<forge>.push). This is what lets one build land nested on GHCR and
+    # flattened on Docker Hub: the path grammar is the sink’s, never this action’s.
+    # The tag half is ignored — the semver cascade below supplies its own.
+    # Credentials key on the SINK name (<SINK>_REGISTRY_USERNAME / _PASSWORD), because
+    # two accounts on one host need two secrets; the unprefixed pair stays the default.
+    # EMPTY falls back to registry + image, the single-destination spelling every
+    # project without a publish route still uses.
+    description: Newline-separated `<sink> <ref>` destinations (empty => registry + image).
+    required: false
+    default: ""
 outputs:
   digest:
     # The content digest (sha256:…) of the published image, tag-independent (every
@@ -76,4 +89,5 @@ runs:
         IMAGE: ${{ inputs.image }}
         VERSION: ${{ inputs.version }}
         REGISTRY: ${{ inputs.registry }}
+        REFS: ${{ inputs.refs }}
       run: bash "$GITHUB_ACTION_PATH/push.sh"
