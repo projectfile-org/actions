@@ -27,17 +27,36 @@ archive="${ARTIFACT_NAME}.tar"
 # GHCR and flattened on Docker Hub. REGISTRY + IMAGE remain the single-destination
 # spelling: a project that declares no publish route still pushes exactly where it
 # always did, and this file needs no branch beyond building the list.
+#
+# SINK is the publish CELL's own destination: when the job fans over a
+# destination axis, this cell owns exactly one of the declared refs and skips
+# the rest. Publishing the whole fan-out from every cell would defeat the axis —
+# the point is that one registry refusing a push fails ONE cell, not the release.
+# Unset => publish every declared destination from this one job, the historical
+# single-job fan-out.
 sink_names=()
 sink_repos=()
 if [ -n "${REFS:-}" ]; then
   while read -r _sink _ref; do
     [ -n "${_ref}" ] || continue
+    if [ -n "${SINK:-}" ] && [ "${_sink}" != "${SINK}" ]; then
+      echo "oci-push skipping sink=${_sink} — this cell publishes sink=${SINK}"
+      continue
+    fi
     sink_names+=("${_sink}")
     # A composed ref may carry the plane's tag; the cascade below supplies its
     # own, so only the repository half is kept — the same rule as the legacy
     # path, applied in one place.
     sink_repos+=("${_ref%:*}")
   done <<< "${REFS}"
+  # A cell whose sink names no ref must STOP: the axis and the refs list were
+  # composed from one document, so disagreement means the workflow is stale, and
+  # falling through to the legacy single-destination path below would publish
+  # this cell to the wrong place under a name nobody declared.
+  if [ -n "${SINK:-}" ] && [ "${#sink_repos[@]}" -eq 0 ]; then
+    echo "oci-push: no ref declared for sink=${SINK} — cell axis and refs disagree" >&2
+    exit 1
+  fi
 fi
 if [ "${#sink_repos[@]}" -eq 0 ]; then
   : "${IMAGE:?oci-push: IMAGE (the basename ref) is required when REFS is empty}"

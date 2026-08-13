@@ -70,6 +70,15 @@ inputs:
     description: Newline-separated `<sink> <ref>` destinations (empty => registry + image).
     required: false
     default: ""
+  sink:
+    # The publish CELL's own destination — the sink NAME this cell publishes, the
+    # rest of `refs` skipped. ci-resolver binds it to the destination matrix axis, so
+    # a job with two declared sinks runs two cells: one credential each, and a
+    # registry refusing a push fails ITS cell instead of the whole release. EMPTY
+    # keeps the single-job fan-out (every declared destination from one cell).
+    description: Sink name this cell publishes (empty => every destination in refs).
+    required: false
+    default: ""
 outputs:
   digest:
     # The content digest (sha256:…) of the published image, tag-independent (every
@@ -90,4 +99,5 @@ runs:
         VERSION: ${{ inputs.version }}
         REGISTRY: ${{ inputs.registry }}
         REFS: ${{ inputs.refs }}
+        SINK: ${{ inputs.sink }}
       run: bash "$GITHUB_ACTION_PATH/push.sh"

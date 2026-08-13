@@ -23,9 +23,34 @@ set -euo pipefail
 : "${RELEASE_PATH:?forgejo-release: RELEASE_PATH (the artifact binary path) is required}"
 : "${GOOS:?forgejo-release: GOOS must be set (matrix axis)}"
 : "${GOARCH:?forgejo-release: GOARCH must be set (matrix axis)}"
-: "${FORGEJO_TOKEN:?forgejo-release: FORGEJO_TOKEN must be bound (credentials overlay)}"
-: "${GITHUB_SERVER_URL:?forgejo-release: GITHUB_SERVER_URL must be set (Forgejo context)}"
-: "${GITHUB_REPOSITORY:?forgejo-release: GITHUB_REPOSITORY must be set (Forgejo context)}"
+
+# WHERE this cell releases. The ambient Forgejo Actions context is the default, so
+# a project releasing only to the forge it runs on binds nothing. SERVER_URL/REPO
+# override it, which is what lets a kiota pipeline attach the same binaries to a
+# Codeberg release: Codeberg grants no build minutes, so nothing can run there.
+# REPO is its own input rather than derived from SERVER_URL, because the repository
+# name differs per forge — kiota holds projectfile/bridge, GitHub holds
+# damian-buho/projectfile-bridge.
+server_url="${SERVER_URL:-${GITHUB_SERVER_URL:-}}"
+repo="${REPO:-${GITHUB_REPOSITORY:-}}"
+: "${server_url:?forgejo-release: server-url (or GITHUB_SERVER_URL) must be set}"
+: "${repo:?forgejo-release: repo (or GITHUB_REPOSITORY) must be set}"
+
+# The token NAME is DERIVED from the destination: uppercase, `-` → `_`, suffix
+# `_TOKEN`, so adding a destination is a data edit and never a roster edit here.
+# FORGEJO_TOKEN stays the fallback — it names a PROTOCOL rather than a destination,
+# and it is what every project binding no per-destination secret already uses.
+token="${FORGEJO_TOKEN:-}"
+if [ -n "${SINK:-}" ]; then
+	_token_var="$(printf '%s' "${SINK}" | tr '[:lower:]-' '[:upper:]_')_TOKEN"
+	if [ -n "${!_token_var:-}" ]; then
+		echo "[forgejo-release] sink=${SINK} authenticating with ${_token_var}" >&2
+		token="${!_token_var}"
+	else
+		echo "[forgejo-release] sink=${SINK} has no ${_token_var} — falling back to FORGEJO_TOKEN" >&2
+	fi
+fi
+: "${token:?forgejo-release: no token bound (credentials overlay: <SINK>_TOKEN or FORGEJO_TOKEN)}"
 
 asset="${RELEASE_PATH}-${GOOS}-${GOARCH}"
 name="${asset##*/}"
@@ -41,7 +66,7 @@ fi
 
 # First output of the step. Without it a cell that dies during step setup and one
 # that blocks on the first tea call look identical: both print nothing at all.
-log "cell ${GOOS}/${GOARCH} releasing ${name} at ${VERSION} on ${GITHUB_SERVER_URL}"
+log "cell ${GOOS}/${GOARCH} releasing ${name} at ${VERSION} on ${server_url}"
 
 # Isolate tea's config to a per-job tmpdir (tea resolves it via XDG_CONFIG_HOME).
 # The host-mode runner persists ~/.config/tea/config.yml across jobs, so a bare
@@ -55,9 +80,9 @@ XDG_CONFIG_HOME="$(mktemp -d)"
 # sends at expiry, so the guard against hanging becomes an unkillable hang. The
 # runner attaches a TTY, so this is not theoretical. /dev/null also turns any
 # prompt into an immediate EOF failure, which is what CI wants anyway.
-timeout "${timeout_s}" tea login add --name ci                  \
-                                     --url "${GITHUB_SERVER_URL}" \
-                                     --token "${FORGEJO_TOKEN}" </dev/null
+timeout "${timeout_s}" tea login add --name ci             \
+                                     --url "${server_url}" \
+                                     --token "${token}" </dev/null
 
 # Bounded attach: the upload is a network crossing that every losing cell makes
 # against the SAME release, so it gets timeout + retry + exponential backoff with
@@ -68,14 +93,14 @@ timeout "${timeout_s}" tea login add --name ci                  \
 attach() {
 	local attempt=1 delay
 	while :; do
-		if timeout "${timeout_s}" tea release assets delete --confirm                    \
-		                                                    --repo "${GITHUB_REPOSITORY}" \
+		if timeout "${timeout_s}" tea release assets delete --confirm       \
+		                                                    --repo "${repo}" \
 		                                                    "${VERSION}" "${name}" </dev/null; then
 			log "dropped stale attachment ${name} on ${VERSION}"
 		else
 			log "no stale attachment ${name} on ${VERSION}"
 		fi
-		if timeout "${timeout_s}" tea release assets create --repo "${GITHUB_REPOSITORY}" \
+		if timeout "${timeout_s}" tea release assets create --repo "${repo}"    \
 		                                                    "${VERSION}" "${asset}" </dev/null; then
 			log "attached ${name} to release ${VERSION} on attempt ${attempt}"
 			return 0
@@ -93,8 +118,8 @@ attach() {
 
 # Create wins on the first cell; attach wins on cells 2..N (HTTP 409 — the release
 # already exists). The tag is the title (tea SDK requires non-empty).
-if timeout "${timeout_s}" tea release create --repo "${GITHUB_REPOSITORY}"                       \
-                                             --tag "${VERSION}" --title "${VERSION}"              \
+if timeout "${timeout_s}" tea release create --repo "${repo}"                         \
+                                             --tag "${VERSION}" --title "${VERSION}" \
                                              --asset "${asset}" </dev/null; then
 	log "created release ${VERSION} with ${name}"
 else

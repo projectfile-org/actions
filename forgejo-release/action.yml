@@ -27,9 +27,10 @@
 # Auth is NOT an input: the leaf declares `env: [FORGEJO_TOKEN]` and ci-resolver's
 # per-target credentials overlay binds that NAME to a secret ref on THIS job. A
 # composite action's bash sees the job's OS env (it cannot read the `secrets`
-# context), so release.sh reads $FORGEJO_TOKEN directly — the env NAME is what
-# scopes the secret to the release job. GITHUB_SERVER_URL / GITHUB_REPOSITORY
-# (the standard Forgejo Actions context) supply the forge URL and repo.
+# context), so release.sh reads the token from the env directly — the env NAME is
+# what scopes the secret to the release job. A cell naming a `sink` reads the
+# DERIVED name (<SINK>_TOKEN) instead, so two destinations never share one secret.
+# `server-url` / `repo` default to the ambient Forgejo Actions context.
 name: forgejo-release
 description: Attach one cell-keyed binary to a Forgejo release via tea (create-then-attach across matrix cells).
 inputs:
@@ -46,6 +47,29 @@ inputs:
     # download edge restored the producer's dist/ tree to the workspace already.
     description: Unsuffixed binary path; the cell axes are appended to locate the asset.
     required: true
+  server-url:
+    # WHERE this cell releases. Empty => the ambient Forgejo Actions context
+    # (GITHUB_SERVER_URL), which is every project releasing only to the forge it runs
+    # on. Set => a foreign forge, which is what a Codeberg release needs: Codeberg
+    # grants no build minutes, so its release is pushed from kiota's pipeline.
+    description: Forge base URL to release on (empty => the running forge).
+    required: false
+    default: ""
+  repo:
+    # The `<owner>/<repo>` on server-url. Its own input rather than derived, because
+    # the name differs per forge — kiota holds projectfile/bridge, GitHub holds
+    # damian-buho/projectfile-bridge. Empty => the ambient GITHUB_REPOSITORY.
+    description: owner/repo on server-url (empty => the running repository).
+    required: false
+    default: ""
+  sink:
+    # The release CELL's destination NAME. It selects the token: <SINK>_TOKEN,
+    # derived by uppercasing and mapping `-` to `_`, so a new destination is a data
+    # edit. Falls back to FORGEJO_TOKEN, which names a protocol rather than a
+    # destination and is what a single-forge project already binds.
+    description: Destination name selecting <SINK>_TOKEN (empty => FORGEJO_TOKEN).
+    required: false
+    default: ""
 runs:
   using: composite
   steps:
@@ -53,4 +77,7 @@ runs:
       env:
         VERSION: ${{ inputs.version }}
         RELEASE_PATH: ${{ inputs.release-asset-path }}
+        SERVER_URL: ${{ inputs.server-url }}
+        REPO: ${{ inputs.repo }}
+        SINK: ${{ inputs.sink }}
       run: bash "$GITHUB_ACTION_PATH/release.sh"
