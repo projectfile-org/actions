@@ -1,0 +1,81 @@
+# SPDX-FileCopyrightText: 2026 Damián Búho <damian.buho@proton.me>
+#
+# SPDX-License-Identifier: MIT
+#
+# oci-manifest — the assembly end of the per-arch publish. One build cell per declared
+# architecture means one PUSH per architecture, each landing at `<repo>:<tag>-<arch>`;
+# this action indexes those into the manifest list consumers actually pull, at the
+# unsuffixed `<repo>:<tag>`. It is the only node in the image pipeline that never
+# handles a tar: the per-arch images are already at the registry, so the index is built
+# from remote references and pushed back.
+#
+# Pinned in workflows as `projectfile/ci-actions/oci-manifest@v1`. ci-resolver renders it
+# on a node that DROPS the arch axis (`matrix: {without: [M6E_ARCH]}`), so it runs ONCE
+# per series/sink cell after every arch cell of that series has published — and it
+# receives the whole declared arch set as `arches:` rather than one cell's value.
+#
+# Auth is NOT an input, exactly as in oci-push: the leaf declares
+# `env: [REGISTRY_USERNAME, REGISTRY_PASSWORD]` and ci-resolver's per-target credentials
+# overlay binds those NAMES to secret refs on THIS job. buildah and skopeo read the same
+# containers/image auth file, so one `skopeo login` serves both.
+name: oci-manifest
+description: Assemble the per-architecture pushes of one build into a manifest list at the unsuffixed tag.
+inputs:
+  image:
+    # The basename ref ci-resolver composed (<ns>/<name>:<tag>, Docker Hub form). Its
+    # repo half is the prefix every tag is indexed under; its tag half is the lone tag
+    # when VERSION is empty (the no-cascade fallback). Same contract as oci-push, so
+    # both ends of the publish agree on WHERE without a second rule.
+    description: Basename ref whose repo half prefixes every indexed tag.
+    required: true
+  arches:
+    # The whole declared architecture set (org.projectfile.architecture), whitespace
+    # separated — NOT one cell's value: this node dropped the arch axis, and an index
+    # over one architecture would be an index over nothing. EMPTY is the fleet default
+    # (~110 projects declare no architecture): there are no per-arch tags to index, the
+    # unsuffixed tag IS the image oci-push pushed, and this action no-ops.
+    description: Declared architectures to index (whitespace separated; empty => no-op).
+    required: false
+    default: ""
+  version:
+    # The git tag this release published from. Lowered into the SAME semver cascade
+    # oci-push used (stable X.Y.Z => X.Y.Z + X.Y + X + latest; pre-release or non-semver
+    # => exact only), because the index must reach EVERY tag the per-arch images took —
+    # a `latest` left pointing at a bare amd64 image is the failure this action exists to
+    # prevent, and nothing downstream can see it.
+    description: Git tag driving the semver tag cascade (empty => single load-tag index).
+    required: false
+    default: ""
+  registry:
+    # Push-target registry — the OUTPUT_REGISTRY forge var ci-resolver threads. Ignored
+    # when `refs` is present. Empty => Docker Hub.
+    description: Push-target registry to log in to and prefix the indexed ref (OUTPUT_REGISTRY; empty => Docker Hub).
+    required: false
+    default: ""
+  refs:
+    # One `<sink> <ref>` line per destination, composed by the document that declared the
+    # sink — the same list oci-push received, so the index is assembled at exactly the
+    # repository the per-arch tags landed in. The tag half is ignored; the cascade
+    # supplies its own.
+    description: Newline-separated `<sink> <ref>` destinations (empty => registry + image).
+    required: false
+    default: ""
+  sink:
+    # This CELL's destination, off the publish axis: one index per place the release
+    # goes, so a registry refusing the list fails ITS cell instead of the release.
+    description: Sink name this cell indexes (empty => every destination in refs).
+    required: false
+    default: ""
+runs:
+  using: composite
+  steps:
+    - id: manifest
+      shell: bash
+      env:
+        IMAGE: ${{ inputs.image }}
+        ARCHES: ${{ inputs.arches }}
+        VERSION: ${{ inputs.version }}
+        REGISTRY: ${{ inputs.registry }}
+        REFS: ${{ inputs.refs }}
+        SINK: ${{ inputs.sink }}
+      run: bash "$GITHUB_ACTION_PATH/manifest.sh"
