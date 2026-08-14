@@ -75,6 +75,15 @@ inputs:
     description: Dockerfile stage to build (empty => last stage).
     required: false
     default: ""
+  platform:
+    # Target architecture for THIS cell, bound by ci-resolver to the M6E_ARCH axis it
+    # mints from org.projectfile.architecture. A bare arch (`arm64`); platform.sh composes
+    # `linux/` and gates the QEMU binfmt handler before the build. One arch per call and
+    # no --manifest, so the single-image docker-archive contract every consumer downstream
+    # depends on is untouched. Empty => today's native build with no flag at all.
+    description: Target architecture for this cell (empty => native build, no flag).
+    required: false
+    default: ""
 runs:
   using: composite
   steps:
@@ -88,6 +97,7 @@ runs:
         CONTEXT: ${{ inputs.context }}
         PF_CLI_IMAGE: ${{ inputs.pf-cli-image }}
         M6E_BUILD_TARGET: ${{ inputs.target }}
+        PLATFORM: ${{ inputs.platform }}
         # Artifact compression + buildah layer-cache toggles. Forwarded verbatim from
         # the job env (set there via a workflow ci.env entry or the runner’s ambient
         # env); build.sh applies the defaults (none/true) when absent — uncompressed tar

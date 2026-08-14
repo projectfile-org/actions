@@ -22,6 +22,8 @@ source "${GITHUB_ACTION_PATH}/../build-args.sh"
 source "${GITHUB_ACTION_PATH}/../mounts.sh"
 # shellcheck source-path=SCRIPTDIR source=../labels.sh
 source "${GITHUB_ACTION_PATH}/../labels.sh"
+# shellcheck source-path=SCRIPTDIR source=../platform.sh
+source "${GITHUB_ACTION_PATH}/../platform.sh"
 
 # Dockerfile stage selection (mirror the make-plane buildah-build): ci-resolver
 # passes org.projectfile.ci.build-target.<gha|forgejo> as M6E_BUILD_TARGET. Empty
@@ -107,7 +109,7 @@ while true; do
   # A failed attempt must not leave a stale id behind for the next one to read.
   rm --force iid.txt
   set +e
-  env -u SOURCE_DATE_EPOCH BUILDAH_LAYERS="${buildah_layers}" buildah build --format docker --pull=newer "${mem_args[@]+"${mem_args[@]}"}" "${build_args[@]}" "${build_contexts[@]}" "${label_args[@]+"${label_args[@]}"}" "${target_args[@]+"${target_args[@]}"}" --iidfile iid.txt "${CONTEXT}" 2>&1 | tee "${build_log}"
+  env -u SOURCE_DATE_EPOCH BUILDAH_LAYERS="${buildah_layers}" buildah build --format docker --pull=newer "${mem_args[@]+"${mem_args[@]}"}" "${platform_args[@]+"${platform_args[@]}"}" "${build_args[@]}" "${build_contexts[@]}" "${label_args[@]+"${label_args[@]}"}" "${target_args[@]+"${target_args[@]}"}" --iidfile iid.txt "${CONTEXT}" 2>&1 | tee "${build_log}"
   rc="${PIPESTATUS[0]}"
   set -e
   [ "${rc}" -eq 0 ] && break

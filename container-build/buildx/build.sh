@@ -27,6 +27,8 @@ source "${GITHUB_ACTION_PATH}/../build-args.sh"
 source "${GITHUB_ACTION_PATH}/../mounts.sh"
 # shellcheck source-path=SCRIPTDIR source=../labels.sh
 source "${GITHUB_ACTION_PATH}/../labels.sh"
+# shellcheck source-path=SCRIPTDIR source=../platform.sh
+source "${GITHUB_ACTION_PATH}/../platform.sh"
 
 # Standard m6e build-args (mirror the make-plane buildx-build): frontend pin +
 # bare registry/cache forwards (docker reads env; unset => Dockerfile default) +
@@ -59,4 +61,4 @@ echo "buildx building artifact=${ARTIFACT_NAME} image=${IMAGE:-<anonymous>} cont
 # the image's `created` field; an inherited value would freeze it (e.g. 1970-01-01
 # for 0). Stripped here, buildx stamps the real build time — reproducibility
 # (clamping layer timestamps) is intentionally not applied on this plane.
-env -u SOURCE_DATE_EPOCH docker buildx build "${std_args[@]}" "${build_args[@]}" "${build_contexts[@]}" "${label_args[@]+"${label_args[@]}"}" "${target_args[@]+"${target_args[@]}"}" --output "${docker_output}" "${CONTEXT}"
+env -u SOURCE_DATE_EPOCH docker buildx build "${std_args[@]}" "${platform_args[@]+"${platform_args[@]}"}" "${build_args[@]}" "${build_contexts[@]}" "${label_args[@]+"${label_args[@]}"}" "${target_args[@]+"${target_args[@]}"}" --output "${docker_output}" "${CONTEXT}"
