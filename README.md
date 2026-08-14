@@ -59,6 +59,12 @@ Each action's shell lives in a `build.sh` (not inlined in YAML, so `shellcheck`
 lints it directly); the identical arg-parsing is sourced from `build-args.sh` via
 `$GITHUB_ACTION_PATH/../build-args.sh`.
 
+The registry plane shares the same way. `oci/` holds what the publish actions
+must agree on — `sinks.sh` (the destination route), `auth.sh` (the sink-keyed
+credential lookup and login), `tags.sh` (the semver cascade and the per-arch tag
+suffix) and `retry.sh` (the bounded backoff around one registry crossing) — each
+sourced, never executed, so a failure returns into the caller's `set -e`.
+
 ## There is no `live` action (dissolved into run-steps)
 
 `live` brings the just-built image to LIFE and exercises it, but it is **not** an
@@ -151,5 +157,7 @@ NAMES to secret refs on the push job (a composite action's bash reads the job's 
 env, never the `secrets` context). The push ref is the basename `container-build`
 stamped into the tar; a `registry:` input (the leaf’s `registry:` var) re-prefixes
 it under a private host, ABSENT keeps the Docker Hub default. The copy is wrapped
-in a bounded retry+exponential-backoff loop (`M6E_OCI_PUSH_RETRIES` /
-`M6E_OCI_PUSH_BACKOFF`) so a transient registry 5xx doesn’t abort a release.
+in a bounded retry+exponential-backoff loop (`M6E_OCI_RETRIES` /
+`M6E_OCI_BACKOFF`), each attempt capped in time (`M6E_OCI_TIMEOUT`, default 900s)
+so a registry that accepts the connection and then stops answering fails instead
+of hanging the release.

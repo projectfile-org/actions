@@ -19,56 +19,16 @@
 # this is the pure publish hand-off.
 set -euo pipefail
 
+# Names every shared oci/ library logs and fails under, so one transcript line always
+# says WHICH action spoke.
+OCI_ACTION=oci-push
 archive="${ARTIFACT_NAME}.tar"
 
-# Destinations. REFS carries one `<sink> <ref>` line per place this archive is
-# published, each ref COMPOSED by the document that declared the sink — so this
-# action never assumes a path shape, which is what lets one build land nested on
-# GHCR and flattened on Docker Hub. REGISTRY + IMAGE remain the single-destination
-# spelling: a project that declares no publish route still pushes exactly where it
-# always did, and this file needs no branch beyond building the list.
-#
-# SINK is the publish CELL's own destination: when the job fans over a
-# destination axis, this cell owns exactly one of the declared refs and skips
-# the rest. Publishing the whole fan-out from every cell would defeat the axis —
-# the point is that one registry refusing a push fails ONE cell, not the release.
-# Unset => publish every declared destination from this one job, the historical
-# single-job fan-out.
-sink_names=()
-sink_repos=()
-if [ -n "${REFS:-}" ]; then
-  while read -r _sink _ref; do
-    [ -n "${_ref}" ] || continue
-    if [ -n "${SINK:-}" ] && [ "${_sink}" != "${SINK}" ]; then
-      echo "oci-push skipping sink=${_sink} — this cell publishes sink=${SINK}"
-      continue
-    fi
-    sink_names+=("${_sink}")
-    # A composed ref may carry the plane's tag; the cascade below supplies its
-    # own, so only the repository half is kept — the same rule as the legacy
-    # path, applied in one place.
-    sink_repos+=("${_ref%:*}")
-  done <<< "${REFS}"
-  # A cell whose sink names no ref must STOP: the axis and the refs list were
-  # composed from one document, so disagreement means the workflow is stale, and
-  # falling through to the legacy single-destination path below would publish
-  # this cell to the wrong place under a name nobody declared.
-  if [ -n "${SINK:-}" ] && [ "${#sink_repos[@]}" -eq 0 ]; then
-    echo "oci-push: no ref declared for sink=${SINK} — cell axis and refs disagree" >&2
-    exit 1
-  fi
-fi
-if [ "${#sink_repos[@]}" -eq 0 ]; then
-  : "${IMAGE:?oci-push: IMAGE (the basename ref) is required when REFS is empty}"
-  # The historical composition: repo half of the load ref, prefixed with the
-  # registry when one is given (empty => Docker Hub).
-  _legacy="${IMAGE%:*}"
-  if [ -n "${REGISTRY:-}" ]; then
-    _legacy="${REGISTRY}/${_legacy}"
-  fi
-  sink_names+=("")
-  sink_repos+=("${_legacy}")
-fi
+# Destinations (sink_names/sink_repos) — the route this cell publishes to. Shared with
+# oci-manifest, because the index must be assembled at exactly the repository these
+# per-arch tags land in.
+# shellcheck source-path=SCRIPTDIR source=../oci/sinks.sh
+source "${GITHUB_ACTION_PATH}/../oci/sinks.sh"
 
 # skopeo’s docker-archive: transport requires a seekable UNcompressed file (it does
 # random-access Seek on the tar, and --dest-compress is silently ignored for this
@@ -93,88 +53,25 @@ authfile="$(mktemp)"
 digestfile="$(mktemp)"
 trap 'rm -f "${authfile}" "${digestfile}"${decompressed:+ "${ARTIFACT_NAME}.tar"}' EXIT
 
-# mktemp leaves a ZERO-BYTE file; skopeo login READS the authfile (to merge the new
-# entry) before writing, and empty is not valid JSON — "unexpected end of JSON input".
-# Seed an empty Docker-config object so that read parses (a missing file would be fine,
-# but mktemp already created it, and re-creating racily is worse than seeding).
-printf '{}' > "${authfile}"
-
-# Credentials key on the SINK NAME, never the host: two accounts on one registry
-# need two secrets, which a host-keyed scheme cannot hold. <SINK>_REGISTRY_USERNAME
-# / _PASSWORD win when bound; the unprefixed pair remains the fleet default, so a
-# single-destination project binds nothing new.
-_cred() {                                    # $1 sink, $2 USERNAME|PASSWORD → value
-  local _sink="$1" _kind="$2" _name
-  if [ -n "${_sink}" ]; then
-    _name="$(printf '%s' "${_sink}" | tr '[:lower:]-' '[:upper:]_')_REGISTRY_${_kind}"
-    if [ -n "${!_name:-}" ]; then
-      printf '%s' "${!_name}"
-      return 0
-    fi
-  fi
-  _name="REGISTRY_${_kind}"
-  printf '%s' "${!_name:-}"
-}
-
-# The registry to log in to is the ref's own first component. skopeo needs an
-# explicit server, and a first component carrying no `.`, no `:` and not
-# `localhost` is a Docker Hub NAMESPACE rather than a host — the same reference
-# grammar the build plane refuses a bare word under.
-_login_server() {                            # $1 repo ref → server
-  local _head="${1%%/*}"
-  case "${_head}" in
-    localhost|*.*|*:*) printf '%s' "${_head}" ;;
-    *) printf 'docker.io' ;;
-  esac
-}
-
-# One authfile holds every server, so each destination logs in once, up front. A
-# failed login aborts before any copy: half a fan-out is worse than none.
-for _i in "${!sink_repos[@]}"; do
-  _sink="${sink_names[${_i}]}"
-  _server="$(_login_server "${sink_repos[${_i}]}")"
-  _user="$(_cred "${_sink}" USERNAME)"
-  _pass="$(_cred "${_sink}" PASSWORD)"
-  if [ -z "${_user}" ] || [ -z "${_pass}" ]; then
-    echo "oci-push: no credentials for sink=${_sink:-<default>} server=${_server} — bind ${_sink:+$(printf '%s' "${_sink}" | tr '[:lower:]-' '[:upper:]_')_}REGISTRY_USERNAME/_PASSWORD" >&2
-    exit 1
-  fi
-  echo "oci-push logging in sink=${_sink:-<default>} server=${_server} user=${_user}"
-  printf '%s' "${_pass}" | skopeo login --authfile "${authfile}"                \
-    --username "${_user}" --password-stdin "${_server}"
-done
+# One authfile holds every server, so each destination logs in once, up front.
+# shellcheck source-path=SCRIPTDIR source=../oci/auth.sh
+source "${GITHUB_ACTION_PATH}/../oci/auth.sh"
+oci_login "${authfile}"
 
 # The FIRST destination is the primary: it carries the verify pass and the digest
 # the signer reads. Declaration order is the route's order, so the project decides
 # which registry that is.
 image_repo="${sink_repos[0]}"
 
-# Lower the git VERSION into the tag set to publish. A STABLE semver X.Y.Z fans out
-# to the moving heads X and X.Y plus `latest`, so consumers can pin loosely (`:1`,
-# `:1.0`) or float (`:latest`). A PRE-RELEASE (X.Y.Z-rc1, build metadata, …) or any
-# non-semver tag publishes ONLY its exact spelling — an rc must never move `latest`
-# or a release head. A leading `v` is stripped (v1.2.3 == 1.2.3). EMPTY VERSION (not
-# a tag build — defensive: publish is gated tag-only) degrades to the single load-tag
-# push, the historical behaviour.
-ver="${VERSION#v}"
-tags=()
-if [ -z "${VERSION}" ]; then
-  tags=("${IMAGE##*:}")                                   # load tag (no cascade)
-elif [[ "${ver}" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
-  tags=("${ver}" "${BASH_REMATCH[1]}.${BASH_REMATCH[2]}" "${BASH_REMATCH[1]}" latest)
-else
-  tags=("${ver}")                                         # pre-release / non-semver: exact only
-fi
-# One build cell per architecture, so the cascade is per-arch too: without the suffix
-# all three cells push the SAME refs and the last one silently wins. Applied to EVERY
-# tag (`latest-arm64` as much as `1.2.3-arm64`) because the manifest list assembled
-# afterwards indexes each cascade tag, not just the release one.
-if [ -n "${ARCH:-}" ]; then
-  for _t in "${!tags[@]}"; do
-    tags[_t]="${tags[_t]}-${ARCH}"
-  done
-fi
-echo "oci-push version=${VERSION:-<none>} repo=${image_repo} arch=${ARCH:-<none>} tags=[${tags[*]}]"
+# The semver tag cascade (tags[]) — shared with oci-manifest, which pushes the index to
+# every tag of the SAME cascade these per-arch images land under.
+# shellcheck source-path=SCRIPTDIR source=../oci/tags.sh
+source "${GITHUB_ACTION_PATH}/../oci/tags.sh"
+# This cell publishes ONE architecture, so every tag it touches carries the suffix.
+for _t in "${!tags[@]}"; do
+  tags[_t]="$(oci_arch_tag "${tags[_t]}" "${ARCH:-}")"
+done
+echo "oci-push repo=${image_repo} arch=${ARCH:-<none>} tags=[${tags[*]}]"
 
 # Copy the archive to each cascade ref. A failed copy aborts (set -e) so a
 # half-published cascade surfaces immediately rather than leaving a moved
@@ -211,37 +108,11 @@ _published_config() {                       # $@ → skopeo transport + flags
   skopeo inspect --config --raw "$@" | jq --sort-keys '.config'
 }
 
-# Bounded registry copy: the publish is a network/process crossing, so a registry
-# blip (a transient 500 mid blob upload, a dropped connection) must not abort a
-# whole release. skopeo ships --retry-times, but containers/image does NOT treat
-# every upload 5xx as retryable (a mid-session blob failure can be classified
-# fatal), so the flag alone is unreliable for the exact failure seen here. Wrap
-# the copy in a loop that ALWAYS retries, with exponential backoff+jitter (same
-# shape as m6e's compose-pull) so a flapping registry costs seconds, not a
-# rebuild. A copy is idempotent at the dest: re-uploading a blob the registry
-# already has is a no-op, so retrying after a partial upload is safe. ONLY the
-# copy retries; login and verify stay single-shot. M6E_OCI_PUSH_RETRIES=1 opts out.
-_op_retries="${M6E_OCI_PUSH_RETRIES:-3}"
-_op_backoff="${M6E_OCI_PUSH_BACKOFF:-2}"
-_op_copy() {                                 # $@ → everything after `skopeo copy`
-  local _attempt=1 _delay _rc
-  while :; do
-    # set +e: a failed copy is data for the retry test, not a script exit.
-    set +e
-    skopeo copy "$@"
-    _rc=$?
-    set -e
-    [ "${_rc}" -eq 0 ] && return 0
-    if [ "${_attempt}" -ge "${_op_retries}" ]; then
-      echo "oci-push copy FAILED rc=${_rc} ref=${ref} attempts=${_attempt} exhausted" >&2
-      return "${_rc}"
-    fi
-    _delay=$((_op_backoff * (2 ** (_attempt - 1)) + RANDOM % (_op_backoff + 1)))
-    echo "oci-push copy failed rc=${_rc} ref=${ref} attempt=${_attempt}/${_op_retries} — retrying in ${_delay}s" >&2
-    sleep "${_delay}"
-    _attempt=$((_attempt + 1))
-  done
-}
+# Bounded registry copy: the publish is a network/process crossing, so a registry blip
+# must not abort a whole release. ONLY the copy retries; login and verify stay
+# single-shot.
+# shellcheck source-path=SCRIPTDIR source=../oci/retry.sh
+source "${GITHUB_ACTION_PATH}/../oci/retry.sh"
 
 # Two dimensions, one archive: every DESTINATION the route declares, and within
 # each the SEMVER cascade. The outer loop is what makes a build land nested on one
@@ -257,7 +128,7 @@ for _repo in "${sink_repos[@]}"; do
 for t in "${tags[@]}"; do
   ref="${_repo}:${t}"
   echo "oci-push copying archive=${archive} -> ref=${ref} format=v2s2 compression=gzip"
-  _op_copy --format v2s2                                                      \
+  oci_retry "copy ref=${ref}" skopeo copy --format v2s2                       \
     --dest-compress-format gzip --dest-force-compress-format                  \
     --dest-authfile "${authfile}" --digestfile "${digestfile}"                \
     "docker-archive:${archive}" "docker://${ref}"
