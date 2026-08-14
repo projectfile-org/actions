@@ -59,12 +59,11 @@ Each action's shell lives in a `build.sh` (not inlined in YAML, so `shellcheck`
 lints it directly); the identical arg-parsing is sourced from `build-args.sh` via
 `$GITHUB_ACTION_PATH/../build-args.sh`.
 
-The registry plane shares the same way. `oci/` holds what `oci-push` and
-`oci-manifest` must agree on — `sinks.sh` (the destination route), `auth.sh` (the
-sink-keyed credential lookup and login), `tags.sh` (the semver cascade and the
-per-arch tag suffix) and `retry.sh` (the bounded backoff around one registry
-crossing) — each sourced, never executed, so a failure returns into the caller's
-`set -e`.
+The registry plane shares the same way. `oci/` holds the pieces the publish is
+assembled from — `sinks.sh` (the destination route), `auth.sh` (the sink-keyed
+credential lookup and login), `tags.sh` (the semver cascade) and `retry.sh` (the
+bounded backoff around one registry crossing) — each sourced, never executed, so
+a failure returns into the caller's `set -e`.
 
 ## There is no `live` action (dissolved into run-steps)
 
@@ -126,8 +125,7 @@ stayed behind.
 |-------------------|---------|----------------------------------------------------------|
 | `container-build/buildx`  | landed  | `docker/setup-buildx-action` → OCI-tar → cell artifact |
 | `container-build/buildah` | landed  | buildah build → `oci-archive:` tar → cell artifact     |
-| `oci-push`        | landed  | skopeo copy cell tar → registry (no daemon load); retry+backoff on the copy |
-| `oci-manifest`    | landed  | buildah manifest over the per-arch tags → manifest list at the unsuffixed ref |
+| `oci-push`        | landed  | skopeo copy cell tar → registry (no daemon load); with `archives:`, buildah indexes the per-arch tars into one manifest list per cascade tag; retry+backoff on the crossing |
 | `image-scan`      | planned | scanner against `oci-archive:<artifact>.tar` (daemonless)|
 | `secrets-provision` | landed | `org.projectfile.ci.secrets` declarations → `.secrets/` tree (value-write / docker-run dispatcher) |
 
@@ -164,36 +162,37 @@ in a bounded retry+exponential-backoff loop (`M6E_OCI_RETRIES` /
 so a registry that accepts the connection and then stops answering fails instead
 of hanging the release.
 
-## Multi-arch: per-arch pushes, then one index (oci-push + oci-manifest)
+## Multi-arch: many archives, one index, no extra tags (`archives:`)
 
 A project declaring `org.projectfile.architecture` builds ONE cell per
 architecture, each emitting the same single-image `docker-archive` tar the two
 scanners, the live test and `oci-push` are all built around — the archive never
-learns to carry more, there are simply more archives. So `oci-push` suffixes
-every tag of its semver cascade with the cell’s arch (`1.2.3-arm64`,
-`latest-arm64`, …), which is what stops three cells overwriting one ref, and
-`oci-manifest` then indexes those into the manifest list consumers actually pull,
-at the unsuffixed `<repo>:<tag>`. The per-arch tags stay real published tags; the
-list is an index over them.
+learns to carry more, there are simply more archives. `oci-push` then publishes
+those archives *together*: `archives:` carries one `<arch> <artifact-name>` line
+per declared architecture, buildah assembles them into a manifest list locally,
+and `manifest push --all` uploads the members and the index in one crossing, to
+every tag of the semver cascade.
 
-`oci-manifest` is the one image-plane action that handles no artifact: the images
-are already at the registry, so the list is assembled from remote references
-(`buildah manifest add docker://…`) and pushed back. ci-resolver renders it on a
-node that DROPS the arch axis (`matrix: {without: [M6E_ARCH]}`), so it runs once
-per series/destination after every arch cell has published, and receives the whole
-declared set as `arches:` rather than one cell’s value. Empty `arches:` — the
-fleet default, since most projects declare no architecture — makes it a no-op:
-there are no per-arch tags, and the unsuffixed tag already IS the image `oci-push`
-published.
+The consequence that matters is what the registry does **not** gain. Members
+reach it addressed by digest, so the tag list holds `1.2.3`, `1.2`, `1` and
+`latest` — every one of them multi-arch — and no `1.2.3-amd64` scaffolding.
+Publishing each architecture under its own tag first and indexing them afterwards
+also works, and was the earlier shape here; it was abandoned because the
+scaffolding is permanent. Most registries cannot delete a tag at all (this
+workspace’s own logs `Registry does not implement RepositoryRemover`), and Docker
+Hub needs a non-registry API for it, so a `-<arch>` tag published once is
+published forever.
 
-Both actions take the SAME destination inputs (`image`, `version`, `registry`,
-`refs`, `sink`) and share their realisation through `oci/` — the sink route, the
-credential lookup and login, the semver cascade, the retry wrapper. That sharing
-is load-bearing rather than tidiness: the index must reach every tag of the same
-cascade, at the same repository, or `latest` quietly stays a single-arch image
-while `1.2.3` is multi-arch, and nothing downstream can see it.
+Empty `archives:` — the fleet default, since most projects declare no
+architecture — is the single-image path unchanged: one `skopeo copy` per cascade
+tag, byte for byte what it has always published.
 
-The index is verified from the registry, the same rule the push applies to its own
-config: `skopeo inspect --raw` on the pushed ref must return an index whose
-architecture set equals the declared set. Nothing upstream can catch a bad one —
-every per-arch image is individually correct and verifies clean.
+Verification follows the registry-is-the-only-witness rule the single-image path
+already applies to its config, at both ends. Before any upload, the assembled
+list must carry exactly the declared architecture set — buildah reads each
+member’s arch from that member’s own config, so a cell that built the wrong one
+yields a well-formed index over wrong images. After the first push,
+`skopeo inspect --raw` on the published ref must return an index with that same
+set, and each member’s runtime config must equal the config in its tar. Nothing
+upstream can catch either: every per-arch archive is individually correct and
+verifies clean.

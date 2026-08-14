@@ -11,9 +11,9 @@
 # (v1.2.3 == 1.2.3). EMPTY VERSION (not a tag build — defensive: publish is gated
 # tag-only) degrades to the single load-tag push.
 #
-# SHARED by oci-push and oci-manifest and load-bearing for both: the index is pushed to
-# every tag of the SAME cascade the per-arch images were pushed under, so a second copy
-# of this derivation could silently leave `latest` an image while `1.2.3` is an index.
+# Load-bearing for the multi-arch publish too: EVERY tag of the cascade must end up the
+# same kind of object, so a `latest` left a plain image while `1.2.3` is a manifest list
+# would be invisible to every consumer until one pulled on a foreign architecture.
 # SOURCED, not executed: it populates the caller's `tags` array.
 
 ver="${VERSION#v}"
@@ -31,13 +31,5 @@ elif [[ "${ver}" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
 else
   tags=("${ver}")                            # pre-release / non-semver: exact only
 fi
-
-# One build cell per architecture, so the per-arch push suffixes every tag it publishes —
-# `latest-arm64` as much as `1.2.3-arm64`. Without it all three cells push the SAME refs
-# and the last one silently wins. The manifest list is the UNSUFFIXED tag, an index over
-# exactly these, so both ends compose the suffix here.
-oci_arch_tag() {                             # $1 tag, $2 arch (empty => unsuffixed)
-  printf '%s%s' "$1" "${2:+-$2}"
-}
 
 echo "${OCI_ACTION} version=${VERSION:-<none>} cascade=[${tags[*]}]"

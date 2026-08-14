@@ -17,6 +17,15 @@
 # release — the publish job was the single biggest disk-bloat source. The dest tag
 # is the only naming that matters; the archive's stamped name is ignored.
 #
+# ARITY, not two actions: with `archives` set the cell holds one tar per declared
+# architecture and publishes them as ONE manifest list per cascade tag (buildah
+# assembles the index locally and `manifest push --all` uploads members and index
+# together). The registry therefore gains only the cascade tags, every one of them
+# multi-arch. Publishing each architecture under its own `-<arch>` tag instead would
+# leave that scaffolding in the tag list forever — most registries, this workspace's
+# own included, log `Registry does not implement RepositoryRemover` and cannot delete
+# a tag, and Docker Hub needs a non-registry API for it.
+#
 # Auth is NOT an input: the leaf declares `env: [REGISTRY_USERNAME, REGISTRY_PASSWORD]`
 # and ci-resolver's per-target credentials overlay binds those NAMES to secret refs on
 # THIS job. A composite action's bash sees the job's OS env (it cannot read the
@@ -28,8 +37,11 @@ inputs:
   artifact-name:
     # Cell-keyed stem from ci-resolver (image-<axis>-…); the matching <artifact-name>.tar
     # was pulled by the download-artifact step ci-resolver emits ahead of this action.
-    description: Cell-keyed artifact + tar stem.
-    required: true
+    # SUPERSEDED by `archives` when the project declares architectures: the cell then
+    # carries one tar per arch and no single stem can name them.
+    description: Cell-keyed artifact + tar stem (ignored when `archives` is set).
+    required: false
+    default: ""
   image:
     # The basename ref ci-resolver composed (<ns>/<name>:<tag>, Docker Hub form). Its
     # repo half (everything left of the last `:`) is the prefix each cascade tag is
@@ -79,25 +91,28 @@ inputs:
     description: Sink name this cell publishes (empty => every destination in refs).
     required: false
     default: ""
-  arch:
-    # The publish CELL's target architecture, bound by ci-resolver to the M6E_ARCH axis
-    # it mints from org.projectfile.architecture. Every tag in the semver cascade takes a
-    # `-<arch>` suffix, which is what keeps three arch cells of one build from pushing the
-    # SAME ref and silently overwriting each other — nothing upstream catches that, since
-    # each cell's archive is individually correct. The suffixed tags are real published
-    # tags and stay addressable; the manifest list assembled afterwards is an index OVER
-    # them, at the unsuffixed ref. Empty => today's refs, byte for byte.
-    description: Target architecture suffixing every push tag (empty => unsuffixed refs).
+  archives:
+    # One `<arch> <artifact-name>` line per DECLARED architecture, bound by ci-resolver
+    # from the M6E_ARCH axis it mints out of org.projectfile.architecture. Present => this
+    # cell publishes a MANIFEST LIST: the per-arch tars are assembled into one index and
+    # pushed to the cascade tags, so the registry serves `<repo>:1.2.3` as multi-arch and
+    # gains NO per-architecture tag. A `-<arch>` tag is not a release artefact — it is
+    # scaffolding, and a registry that cannot delete tags (most of them) keeps it forever.
+    # Empty => the single-image path below, byte for byte what a non-declaring project
+    # has always published.
+    description: Newline-separated `<arch> <artifact-name>` archives to index (empty => single image).
     required: false
     default: ""
 outputs:
   digest:
-    # The content digest (sha256:…) of the published image, tag-independent (every
-    # cascade tag points at the same image). A downstream cosign sign/attest step
+    # The content digest (sha256:…) of what was published, tag-independent (every cascade
+    # tag points at the same content). On the multi-arch path that is the INDEX digest,
+    # which is the right thing to sign: it is what a consumer pulling `<repo>:<tag>`
+    # resolves, and it commits to every member. A downstream cosign sign/attest step
     # consumes `${repo}@${digest}` so the signature binds the immutable content, not a
     # mutable tag. push.sh also drops it in $M6E_DIGEST_FILE for the in-job fused signer,
     # and the tag cascade in $M6E_TAGS_FILE for the in-job events emit step.
-    description: Content digest (sha256:…) of the pushed image.
+    description: Content digest (sha256:…) of the pushed image or index.
     value: ${{ steps.push.outputs.digest }}
 runs:
   using: composite
@@ -111,5 +126,5 @@ runs:
         REGISTRY: ${{ inputs.registry }}
         REFS: ${{ inputs.refs }}
         SINK: ${{ inputs.sink }}
-        ARCH: ${{ inputs.arch }}
+        ARCHIVES: ${{ inputs.archives }}
       run: bash "$GITHUB_ACTION_PATH/push.sh"

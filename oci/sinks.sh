@@ -12,10 +12,8 @@
 # still uses. SINK is this CELL's own destination on the publish axis: the cell owns one
 # ref and skips the rest, so a registry refusing a push fails ITS cell, not the release.
 #
-# SHARED by oci-push and oci-manifest: the index must be assembled at exactly the
-# repository the per-arch tags were pushed to, and two copies of this rule could disagree
-# without either action failing. SOURCED, not executed — it populates the caller's arrays
-# and `return 1`s into the caller's `set -e`.
+# SOURCED, not executed — it populates the caller's arrays and `return 1`s into the
+# caller's `set -e`.
 
 sink_names=()
 sink_repos=()
