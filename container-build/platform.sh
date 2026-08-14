@@ -43,12 +43,21 @@ if [ -n "${PLATFORM:-}" ]; then
     echo "${BACKEND} platform: native arch=${_arch} — no emulation needed"
   else
     _qemu="$(_qemu_arch "${_arch}")"
-    if [ ! -f "/proc/sys/fs/binfmt_misc/qemu-${_qemu}" ]; then
+    # binfmt_misc is a HOST mount that a container never inherits: a fresh /proc leaves
+    # /proc/sys/fs/binfmt_misc EMPTY, while emulation keeps working, because an `F`-flag
+    # registration pins its interpreter at registration time and so reaches into every
+    # namespace. Probing the handler alone therefore fails a correctly set-up host from
+    # inside any containerised runner. `status` is the sentinel for "the filesystem is
+    # mounted HERE", so its absence means UNVERIFIABLE, not unavailable.
+    if [ ! -e /proc/sys/fs/binfmt_misc/status ]; then
+      echo "${BACKEND} platform: unverifiable arch=${_arch} handler=qemu-${_qemu} host=${_host} — binfmt_misc is not mounted in this namespace, trusting the host registration"
+    elif [ ! -f "/proc/sys/fs/binfmt_misc/qemu-${_qemu}" ]; then
       echo "${BACKEND} platform: MISSING qemu binfmt arch=${_arch} handler=qemu-${_qemu} host=${_host}" >&2
       echo "  install with: docker run --privileged --rm tonistiigi/binfmt --install all" >&2
       return 1
+    else
+      echo "${BACKEND} platform: emulated arch=${_arch} handler=qemu-${_qemu} host=${_host}"
     fi
-    echo "${BACKEND} platform: emulated arch=${_arch} handler=qemu-${_qemu} host=${_host}"
   fi
   platform_args+=(--platform "${_ref}")
 fi
