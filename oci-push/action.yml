@@ -79,6 +79,17 @@ inputs:
     description: Sink name this cell publishes (empty => every destination in refs).
     required: false
     default: ""
+  arch:
+    # The publish CELL's target architecture, bound by ci-resolver to the M6E_ARCH axis
+    # it mints from org.projectfile.architecture. Every tag in the semver cascade takes a
+    # `-<arch>` suffix, which is what keeps three arch cells of one build from pushing the
+    # SAME ref and silently overwriting each other — nothing upstream catches that, since
+    # each cell's archive is individually correct. The suffixed tags are real published
+    # tags and stay addressable; the manifest list assembled afterwards is an index OVER
+    # them, at the unsuffixed ref. Empty => today's refs, byte for byte.
+    description: Target architecture suffixing every push tag (empty => unsuffixed refs).
+    required: false
+    default: ""
 outputs:
   digest:
     # The content digest (sha256:…) of the published image, tag-independent (every
@@ -100,4 +111,5 @@ runs:
         REGISTRY: ${{ inputs.registry }}
         REFS: ${{ inputs.refs }}
         SINK: ${{ inputs.sink }}
+        ARCH: ${{ inputs.arch }}
       run: bash "$GITHUB_ACTION_PATH/push.sh"

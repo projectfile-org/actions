@@ -165,7 +165,16 @@ elif [[ "${ver}" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
 else
   tags=("${ver}")                                         # pre-release / non-semver: exact only
 fi
-echo "oci-push version=${VERSION:-<none>} repo=${image_repo} tags=[${tags[*]}]"
+# One build cell per architecture, so the cascade is per-arch too: without the suffix
+# all three cells push the SAME refs and the last one silently wins. Applied to EVERY
+# tag (`latest-arm64` as much as `1.2.3-arm64`) because the manifest list assembled
+# afterwards indexes each cascade tag, not just the release one.
+if [ -n "${ARCH:-}" ]; then
+  for _t in "${!tags[@]}"; do
+    tags[_t]="${tags[_t]}-${ARCH}"
+  done
+fi
+echo "oci-push version=${VERSION:-<none>} repo=${image_repo} arch=${ARCH:-<none>} tags=[${tags[*]}]"
 
 # Copy the archive to each cascade ref. A failed copy aborts (set -e) so a
 # half-published cascade surfaces immediately rather than leaving a moved
