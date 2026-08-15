@@ -8,10 +8,36 @@ copyright:
 identity:
   created: "2026-06-04"
   name: ci-actions
-  summary: Provider action library for ci-resolver
+  summary: External provider action library for the projectfile ci-resolver
   title:
     en: projectfile/ci-actions
+  description: The external provider action library for ci-resolver. Each provider name maps to one composite action, pinned and consumed as projectfile/ci-actions/<provider>@v1; the resolver keeps the dispatch while this library owns the native CI recipe for each target (Ports and Adapters).
 includes:
   - https://kiota.ch/damian-buho/metadata/raw/branch/main/include.yaml
   - https://kiota.ch/projectfile/metadata/raw/branch/main/include.yaml
 kind: SoftwareSourceCode
+repositories:
+  - branch: main
+    role: origin
+    type: git
+    url: ssh://git@kiota.ch/projectfile/ci-actions.git
+links:
+  - label:
+      en: projectfile/ci-actions on kiota.ch
+      es: projectfile/ci-actions en kiota.ch
+      uk: projectfile/ci-actions на kiota.ch
+    preferred: true
+    type: source-code
+    url: https://kiota.ch/projectfile/ci-actions
+keywords:
+  - ci-actions
+  - projectfile
+  - ci-resolver
+  - github-actions
+  - composite-action
+  - provider
+technologies:
+  - docker
+license:
+  covers: project
+  spdx: "MIT"
