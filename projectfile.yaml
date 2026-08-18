@@ -47,3 +47,7 @@ technologies:
 license:
   covers: project
   spdx: "MIT"
+org:
+  projectfile:
+    release:
+      tag-prefix: v
