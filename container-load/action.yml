@@ -1,0 +1,33 @@
+# SPDX-FileCopyrightText: 2026 Damián Búho <damian.buho@proton.me>
+#
+# SPDX-License-Identifier: MIT
+#
+# container-load — enter a cell's build archive into the runner's image store. Only a
+# FUSED live job renders this: compose needs the image present to run it, whereas a
+# scanner reads the same tar as a plain file (M6E_IMAGE_ARCHIVE) and a publish job
+# skopeo-copies it to the registry, both without ever touching the store.
+#
+# It exists as a pinned action rather than an inline `run: docker load` because the
+# load needs the same shared-store retry container-build/buildah carries, and the
+# recipe belongs in the versioned action, not in the rendered YAML (ci-resolver
+# Law 2). ci-resolver keeps only the decision to load and the archive name.
+name: container-load
+description: Load a cell's build archive into the runner image store, retrying the shared-store race.
+inputs:
+  archive:
+    # The cell's archive path (<stem>.tar), the same stem container-build uploaded and
+    # download-artifact just pulled into the workspace. load.sh follows a .zst suffix
+    # when the builder compressed it.
+    description: Path to the image archive to load.
+    required: true
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      env:
+        ARCHIVE: ${{ inputs.archive }}
+        # Retry knobs, forwarded from the job env so a runner can widen or disable the
+        # retry without a new action release. load.sh defaults them (3 attempts, 5s).
+        M6E_LOAD_ATTEMPTS: ${{ env.M6E_LOAD_ATTEMPTS }}
+        M6E_LOAD_RETRY_DELAY: ${{ env.M6E_LOAD_RETRY_DELAY }}
+      run: bash "$GITHUB_ACTION_PATH/load.sh"
