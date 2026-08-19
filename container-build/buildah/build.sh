@@ -66,21 +66,17 @@ buildah_layers="${M6E_BUILDAH_LAYERS:-true}"
 # same tag would silently never be fetched. "newer" checks the registry digest
 # and only re-pulls on an actual change, so unchanged bases stay cache-hits.
 #
-# Shared-store race retry: under --layers buildah runs a CACHE PROBE before every
-# step, which enumerates the store’s images and THEN resolves each candidate’s top
-# layer. The runner executes CAPACITY=NUMPROCS jobs against ONE persistent graphroot,
-# so a sibling job’s reap (the `buildah rmi` below, or docker-cleanup’s `docker rmi`
-# against the same podman store) can delete a record’s layer between those two
-# lookups — buildah then aborts the WHOLE build with “layer not known” on whichever
-# step it happened to be probing, which is why the victim looks random. The state is
-# transient (the half-deleted record is gone on the next pass) and a replay runs on
-# cache hits, so retrying costs almost nothing. ONLY that error class retries; every
-# other failure stays fatal and fails fast. M6E_BUILDAH_ATTEMPTS=1 opts out.
-attempts="${M6E_BUILDAH_ATTEMPTS:-3}"
-retry_delay="${M6E_BUILDAH_RETRY_DELAY:-5}"
-# containers-storage inconsistencies a replay resolves: each is a record pointing at
-# something a concurrent writer removed, never a defect in this build’s Dockerfile.
-transient='layer not known|image not known|identifier is not an image'
+# Shared-store race retry: what makes a BUILD a victim is the CACHE PROBE --layers runs
+# before every step — it enumerates the store’s images and THEN resolves each candidate’s
+# top layer, so a sibling job’s reap between those two lookups aborts the WHOLE build on
+# whichever step it happened to be probing (the shared lib holds the general mechanism).
+# A replay runs on cache hits, so retrying costs almost nothing. M6E_BUILDAH_ATTEMPTS=1
+# opts out; container-load is the twin victim and retries the same class.
+STORE_ACTION="buildah build"
+STORE_ATTEMPTS="${M6E_BUILDAH_ATTEMPTS:-3}"
+STORE_DELAY="${M6E_BUILDAH_RETRY_DELAY:-5}"
+# shellcheck source-path=SCRIPTDIR source=../../store/retry.sh
+source "${GITHUB_ACTION_PATH}/../../store/retry.sh"
 # Per-build memory cap. The runner cgroup is one shared ceiling (CAPACITY × per-job
 # budget — see r8e/forgejo-runner AGENTS.md); without a per-build cap every heavy RUN
 # (elm --optimize, a GCC compile) fans out at full nproc inside that shared ceiling and
@@ -103,31 +99,13 @@ fi
 build_log=".buildah-build-${ARTIFACT_NAME}.log"
 trap 'rm --force "${build_log}"' EXIT
 
-attempt=1
-while true; do
-  echo "buildah build attempt=${attempt}/${attempts} artifact=${ARTIFACT_NAME} layers=${buildah_layers}"
+_buildah_build() {
   # A failed attempt must not leave a stale id behind for the next one to read.
   rm --force iid.txt
-  set +e
-  env -u SOURCE_DATE_EPOCH BUILDAH_LAYERS="${buildah_layers}" buildah build --format docker --pull=newer "${mem_args[@]+"${mem_args[@]}"}" "${platform_args[@]+"${platform_args[@]}"}" "${build_args[@]}" "${build_contexts[@]}" "${label_args[@]+"${label_args[@]}"}" "${target_args[@]+"${target_args[@]}"}" --iidfile iid.txt "${CONTEXT}" 2>&1 | tee "${build_log}"
-  rc="${PIPESTATUS[0]}"
-  set -e
-  [ "${rc}" -eq 0 ] && break
-  if [ "${attempt}" -ge "${attempts}" ]; then
-    echo "buildah build FAILED rc=${rc} artifact=${ARTIFACT_NAME} attempts=${attempts} exhausted" >&2
-    exit "${rc}"
-  fi
-  if ! grep --quiet --extended-regexp "${transient}" "${build_log}"; then
-    echo "buildah build FAILED rc=${rc} artifact=${ARTIFACT_NAME} attempt=${attempt} — not a store race, not retrying" >&2
-    exit "${rc}"
-  fi
-  # Backoff grows per attempt; the jitter keeps two colliding jobs from replaying in
-  # lockstep and colliding again.
-  delay=$(( retry_delay * attempt + RANDOM % retry_delay ))
-  echo "buildah build hit the shared-store race rc=${rc} artifact=${ARTIFACT_NAME} attempt=${attempt}/${attempts} — retrying in ${delay}s" >&2
-  sleep "${delay}"
-  attempt=$(( attempt + 1 ))
-done
+  env -u SOURCE_DATE_EPOCH BUILDAH_LAYERS="${buildah_layers}" buildah build --format docker --pull=newer "${mem_args[@]+"${mem_args[@]}"}" "${platform_args[@]+"${platform_args[@]}"}" "${build_args[@]}" "${build_contexts[@]}" "${label_args[@]+"${label_args[@]}"}" "${target_args[@]+"${target_args[@]}"}" --iidfile iid.txt "${CONTEXT}"
+}
+
+store_retry "artifact=${ARTIFACT_NAME} layers=${buildah_layers}" "${build_log}" _buildah_build
 image="$(cat iid.txt)"
 
 # Layer-metadata heal (buildah --layers bug workaround, twin of the make-plane
