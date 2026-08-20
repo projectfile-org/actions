@@ -37,6 +37,8 @@
 #   PF_CLI_ENTRYPOINT     binary to exec in PF_CLI_IMAGE (default: pf-cli)
 #   M6E_CONTAINER_RUNTIME container runtime for the PF_CLI_IMAGE fallback (default: docker)
 #   M6E_LABEL_TIMEOUT     seconds per pf-cli call — includes may fetch (default: 30)
+#   M6E_LABEL_LANG        language for the localized title/summary (default: the
+#                         projectfile's org.projectfile.i18n.default-language, else en)
 #
 # Degradation: a missing git repo, projectfile, or pf-cli skips ONLY the
 # affected labels with a stderr note — a build never fails over a label source.
@@ -56,10 +58,14 @@ PROJECT_ROOT="$(cd "${PROJECT_ROOT}" && pwd)"
 M6E_LABEL_TIMEOUT="${M6E_LABEL_TIMEOUT:-30}"
 
 # Emit one label line; empty values are skipped (a label with an empty value
-# carries no information and would only churn image digests).
+# carries no information and would only churn image digests). Newlines fold to
+# spaces: every caller reads this stdout one line per --label, so a multi-line
+# value would smuggle its continuation lines in as extra bogus labels.
 _lbl_emit() {
-    if [ -n "$2" ]; then
-        printf '%s=%s\n' "$1" "$2"
+    local _value="${2//$'\n'/ }"
+    if [ -n "${_value}" ]; then
+        [ "${_value}" = "$2" ] || _lbl_log "folded newlines in value of $1"
+        printf '%s=%s\n' "$1" "${_value}"
     fi
 }
 
@@ -176,6 +182,20 @@ _pf() {
     return 0
 }
 
+# ── Label language: the project's primary language ───────────────────────────
+# identity.title and identity.summary are spec §7 localized maps. Read WITHOUT
+# --lang, pf-cli serializes the whole map as `lang=value` lines, so every extra
+# locale becomes its own bogus top-level label and the primary one keeps a
+# `lang=` prefix in its value.
+
+_lang="${M6E_LABEL_LANG:-}"
+if [ -z "${_lang}" ]; then
+    _lang="$(_pf get --path-file "${_pf_path}"                          \
+        --default en 'org.projectfile.i18n.default-language')"
+fi
+_lang="${_lang:-en}"
+_lbl_log "label language=${_lang} for ${_pf_path}"
+
 # ── Projectfile-derived labels (one batch read) ───────────────────────────────
 # NO --expand-env here: identity fields never carry ${VAR} refs, and expansion
 # pre-parse breaks the whole document when unrelated build-arg refs (e.g.
@@ -183,6 +203,7 @@ _pf() {
 
 OCI_LABEL_TITLE="" OCI_LABEL_DESCRIPTION="" OCI_LABEL_LICENSES="" OCI_LABEL_SOURCE=""
 _pf_batch="$(_pf get --path-file "${_pf_path}" --batch --format sh      \
+    --lang "${_lang}"                                                   \
     --path OCI_LABEL_TITLE=identity.title                               \
     --path OCI_LABEL_DESCRIPTION=identity.summary                       \
     --path OCI_LABEL_LICENSES=license.spdx                              \
@@ -211,8 +232,10 @@ if [ -z "${_ext_labels}" ]; then
     fi
 fi
 while IFS= read -r _line; do
-    if [ -n "${_line}" ]; then
-        _lbl_log "projectfile label ${_line%%=*}"
-        printf '%s\n' "${_line}"
-    fi
+    case "${_line}" in
+        '') ;;
+        *=*) _lbl_log "projectfile label ${_line%%=*}"
+             printf '%s\n' "${_line}" ;;
+        *)   _lbl_log "dropped label line carrying no KEY=VALUE: ${_line}" ;;
+    esac
 done <<< "${_ext_labels}"
