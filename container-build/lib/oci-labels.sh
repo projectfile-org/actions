@@ -135,7 +135,7 @@ fi
 
 # ── pf-cli resolution: PF_CLI > PATH > PF_CLI_IMAGE container > skip ─────────
 # The container fallback mounts the project read-only and reads the projectfile
-# by its in-container path, mirroring m6e's tools-fallback.mk opt-in.
+# by its in-container path, mirroring m6e's base/000-pfcli-fallback.mk opt-in.
 # --entrypoint pf-cli: the published cli image is a b19 service image
 # (ENTRYPOINT entrypoint.d, CMD sleep infinity); without this override `get`
 # is an unknown command.d verb and the container hangs on sleep until timeout.
