@@ -51,8 +51,9 @@ inputs:
     description: Basename ref whose repo half prefixes every push tag.
     required: true
   version:
-    # The git tag this build published from (ci-resolver passes ${{ github.ref_name }};
-    # publish-image is gated tag-only, so it is always a tag). push.sh lowers it into the
+    # The git ref this build published from (ci-resolver passes ${{ github.ref_name }}).
+    # On a PREVIEW run that is a branch name and `preview` below takes over; on a release
+    # it is the tag, and push.sh lowers it into the
     # SEMVER tag cascade: a stable X.Y.Z pushes X.Y.Z + X.Y + X + latest; a pre-release
     # (X.Y.Z-rc1) or non-semver tag pushes ONLY its exact spelling (latest/heads stay put).
     # A leading `v` is stripped. EMPTY keeps the historical single push of the load tag.
