@@ -18,6 +18,11 @@
 # non-semver -> exact only). No build here — the image was built once upstream;
 # this is the pure publish hand-off.
 #
+# With PREVIEW set the ref is a branch, not a tag: the cascade collapses to the single
+# `latest-<branch>` tag and only the PRIMARY destination receives it. A release moves
+# `latest` and every semver head for every sink the route declares; a preview moves
+# nothing a consumer floats on, and stays on the one registry the project controls.
+#
 # With ARCHIVES set the cell holds one tar per DECLARED architecture and the same
 # cascade is published as MANIFEST LISTS instead: buildah assembles the index locally
 # and `manifest push --all` uploads members and index together, so the per-architecture
@@ -54,6 +59,17 @@ fi
 # Destinations (sink_names/sink_repos) — the route this cell publishes to.
 # shellcheck source-path=SCRIPTDIR source=../oci/sinks.sh
 source "${GITHUB_ACTION_PATH}/../oci/sinks.sh"
+
+# Nothing to publish is a SUCCESS here, not a failure: on a preview the route narrowed
+# every destination of this cell away (sinks.sh keeps the primary alone), and a publish
+# axis renders one cell per declared sink whether or not the ref is a preview. Exit
+# before mktemp and the registry login so a withheld cell costs no credential handling
+# at all. sink_routed=N can never reach this — the single-destination fallback always
+# yields one repo — so an empty list here is only ever the narrowing.
+if [ "${#sink_repos[@]}" -eq 0 ]; then
+  echo "${OCI_ACTION} preview=${PREVIEW:-<none>} sink=${SINK:-<all>} — no destination for this cell, nothing to publish"
+  exit 0
+fi
 
 # skopeo holds registry creds in an auth file (Docker config format, password
 # base64). mktemp on the runner's disk-backed /tmp; the EXIT trap wipes it so the

@@ -11,6 +11,8 @@
 # (v1.2.3 == 1.2.3). EMPTY VERSION (not a tag build — defensive: publish is gated
 # tag-only) degrades to the single load-tag push.
 #
+# A PREVIEW build — a push to a branch that is not the project's primary one — takes
+# precedence over every arm below and publishes exactly ONE tag, `latest-<branch>`.
 # Load-bearing for the multi-arch publish too: EVERY tag of the cascade must end up the
 # same kind of object, so a `latest` left a plain image while `1.2.3` is a manifest list
 # would be invisible to every consumer until one pulled on a foreign architecture.
@@ -18,7 +20,21 @@
 
 ver="${VERSION#v}"
 tags=()
-if [ -z "${VERSION:-}" ]; then
+if [ -n "${PREVIEW:-}" ]; then
+  # Checked BEFORE the semver arm because a BRANCH may be named like a version
+  # (`1.27.0`, `release-2`): taking the cascade there would move `latest` and every
+  # release head to an unreviewed branch build. The `latest-` prefix is structural, not
+  # cosmetic — it is what keeps a preview tag impossible to mistake for a release one in
+  # a tag list nobody can delete (most registries, this workspace's own included, cannot
+  # remove a tag at all).
+  #
+  # OCI accepts [a-zA-Z0-9._-] in a tag and a branch name accepts far more (the `/` in
+  # feature/x, and worse), so every other byte flattens to `-` — the same rule the make
+  # plane's M6E_GIT_BRANCH_SANITIZED applies. Clamped well inside the 128-char tag limit,
+  # which the `latest-` prefix already eats into.
+  preview_slug="$(printf '%s' "${PREVIEW}" | tr --complement 'a-zA-Z0-9._-' '-' | cut --characters=1-110)"
+  tags=("latest-${preview_slug}")
+elif [ -z "${VERSION:-}" ]; then
   # No cascade: the load tag carried by the basename ref. A ref with no `:tag` half
   # would silently become a tag spelled like a repository path, so refuse it.
   case "${IMAGE:-}" in
@@ -32,4 +48,4 @@ else
   tags=("${ver}")                            # pre-release / non-semver: exact only
 fi
 
-echo "${OCI_ACTION} version=${VERSION:-<none>} cascade=[${tags[*]}]"
+echo "${OCI_ACTION} version=${VERSION:-<none>} preview=${PREVIEW:-<none>} cascade=[${tags[*]}]"

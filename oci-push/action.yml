@@ -59,6 +59,17 @@ inputs:
     description: Git tag driving the semver tag cascade (empty => single load-tag push).
     required: false
     default: ""
+  preview:
+    # The BRANCH name when this run is a preview — a push to a branch that is not the
+    # project default (ci-resolver gates the publish node on the `preview` event token and
+    # threads the ref name here; empty on a tag). It OVERRIDES `version` in tags.sh: the
+    # cascade collapses to the single `latest-<branch>` tag, so `latest` and every semver
+    # head keep pointing at the last release. It also narrows the destinations to the
+    # primary sink, because most registries cannot delete a tag and a preview that reached
+    # a public mirror would stay in its tag list forever.
+    description: Branch name when this run is a preview (empty => a release, full cascade).
+    required: false
+    default: ""
   registry:
     # Push-target registry — the OUTPUT_REGISTRY forge var ci-resolver threads (the
     # forge-dependent place THIS project publishes TO). DISTINCT from the per-namespace
@@ -123,6 +134,7 @@ runs:
         ARTIFACT_NAME: ${{ inputs.artifact-name }}
         IMAGE: ${{ inputs.image }}
         VERSION: ${{ inputs.version }}
+        PREVIEW: ${{ inputs.preview }}
         REGISTRY: ${{ inputs.registry }}
         REFS: ${{ inputs.refs }}
         SINK: ${{ inputs.sink }}
