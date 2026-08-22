@@ -11,8 +11,10 @@
 # build.
 #
 # The asset is the binary the build-binaries cell produced, found by suffixing the
-# resolved artifact path with the cell axes: <release-asset-path>-${GOOS}-${GOARCH}.
-# GOOS/GOARCH are the matrix axes the resolver bound onto the job env.
+# resolved artifact path with the cell axes: <release-asset-path>-<os>-<arch>. The
+# pair comes from TARGET_OS/TARGET_ARCH on the job env, falling back to GOOS/GOARCH
+# — the language-neutral names let a Crystal or Zig cell reuse this action verbatim,
+# while a Go project keeps the axis names its build already binds.
 #
 # Create-then-attach idempotency: `tea release create` errors HTTP 409 if a release
 # for the tag already exists (the 2nd..Nth matrix cell, a re-run, or a manual
@@ -43,8 +45,9 @@ inputs:
   release-asset-path:
     # The UNSUFFIXED binary path resolved from org.projectfile.artifacts (the single
     # kind=binary entry, e.g. dist/pf-cli). The action suffixes it per cell:
-    # <path>-${GOOS}-${GOARCH} (GOOS/GOARCH from the matrix env). The build→consumer
-    # download edge restored the producer's dist/ tree to the workspace already.
+    # <path>-<os>-<arch> (TARGET_OS/TARGET_ARCH from the matrix env, GOOS/GOARCH as
+    # the fallback). The build→consumer download edge restored the producer's dist/
+    # tree to the workspace already.
     description: Unsuffixed binary path; the cell axes are appended to locate the asset.
     required: true
   server-url:

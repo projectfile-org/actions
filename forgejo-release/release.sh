@@ -10,8 +10,8 @@
 # axes. The tag is both the release tag and the title (tea's SDK requires a
 # non-empty title). Create wins on the first matrix cell; the 2nd..Nth cell (or a
 # re-run) hits HTTP 409 "there is already a release for this tag" and falls back
-# to `tea release assets create` — so a GOOS×GOARCH matrix converges on ONE
-# release with one asset per cell.
+# to `tea release assets create` — so an os×arch matrix converges on ONE release
+# with one asset per cell.
 #
 # Tunables, all optional:
 #   RELEASE_TIMEOUT  seconds per tea call (default 120)
@@ -21,8 +21,13 @@ set -euo pipefail
 
 : "${VERSION:?forgejo-release: VERSION (the git tag) is required}"
 : "${RELEASE_PATH:?forgejo-release: RELEASE_PATH (the artifact binary path) is required}"
-: "${GOOS:?forgejo-release: GOOS must be set (matrix axis)}"
-: "${GOARCH:?forgejo-release: GOARCH must be set (matrix axis)}"
+# WHICH cell this is — the pair that suffixes the asset name. TARGET_OS/TARGET_ARCH
+# is the language-neutral spelling every toolchain can bind; GOOS/GOARCH remains the
+# fallback so the Go projects that already name their axes that way need no edit.
+target_os="${TARGET_OS:-${GOOS:-}}"
+target_arch="${TARGET_ARCH:-${GOARCH:-}}"
+: "${target_os:?forgejo-release: TARGET_OS (or GOOS) must be set (matrix axis)}"
+: "${target_arch:?forgejo-release: TARGET_ARCH (or GOARCH) must be set (matrix axis)}"
 
 # WHERE this cell releases. The ambient Forgejo Actions context is the default, so
 # a project releasing only to the forge it runs on binds nothing. SERVER_URL/REPO
@@ -52,7 +57,7 @@ if [ -n "${SINK:-}" ]; then
 fi
 : "${token:?forgejo-release: no token bound (credentials overlay: <SINK>_TOKEN or FORGEJO_TOKEN)}"
 
-asset="${RELEASE_PATH}-${GOOS}-${GOARCH}"
+asset="${RELEASE_PATH}-${target_os}-${target_arch}"
 name="${asset##*/}"
 timeout_s="${RELEASE_TIMEOUT:-120}"
 retries="${RELEASE_RETRIES:-3}"
@@ -66,7 +71,7 @@ fi
 
 # First output of the step. Without it a cell that dies during step setup and one
 # that blocks on the first tea call look identical: both print nothing at all.
-log "cell ${GOOS}/${GOARCH} releasing ${name} at ${VERSION} on ${server_url}"
+log "cell ${target_os}/${target_arch} releasing ${name} at ${VERSION} on ${server_url}"
 
 # Isolate tea's config to a per-job tmpdir (tea resolves it via XDG_CONFIG_HOME).
 # The host-mode runner persists ~/.config/tea/config.yml across jobs, so a bare
