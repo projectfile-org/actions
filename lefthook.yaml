@@ -1,3 +1,4 @@
+---
 pre-commit:
   parallel: true
   jobs:
@@ -7,3 +8,12 @@ pre-commit:
     - name: shellcheck
       glob: "*.sh"
       run: shellcheck --severity=style {staged_files}
+pre-push:
+  parallel: true
+  jobs:
+    - name: yamllint
+      glob: "*.{yml,yaml}"
+      run: yamllint {all_files}
+    - name: shellcheck
+      glob: "*.sh"
+      run: shellcheck --severity=style {all_files}
