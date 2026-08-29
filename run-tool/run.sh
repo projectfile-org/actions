@@ -150,7 +150,7 @@ else
   done
 fi
 
-echo "run-tool ref=${ref} run=${RUN} env=[${env_names}] mounts=[${MOUNTS:-}] network=[${NETWORK:-}] pull=${RUN_TOOL_PULL:-always}"
+echo "run-tool ref=${ref} run=${RUN} env=[${env_names}] mounts=[${MOUNTS:-}] network=[${NETWORK:-}] pull=${RUN_TOOL_PULL:-always} advisory=${ADVISORY:-false}"
 echo "run-tool prefer-local=${prefer_local} entrypoint=${entrypoint} :: ${prefer_reason}"
 # --pull always: tool images ride MUTABLE tags (BASE_IMAGE_DEFAULT_VERSION || latest),
 # so a runner that has already cached the tag would otherwise run a STALE image forever —
@@ -240,5 +240,13 @@ if [ "${rc}" -ne 0 ]; then
       command -v free >/dev/null 2>&1 && free --mebi >&2 || true
       ;;
   esac
+  # An ADVISORY tool is reported EXACTLY as above — same named cause, same log — and only
+  # its exit code differs: the finding is worth reading, not worth a red build. The rc is
+  # neutralised after the report so a log reader sees what broke and the status it broke
+  # with. Fail-CLOSED: only the literal `true` opts in, so a typo leaves the gate armed.
+  if [ "${ADVISORY:-}" = "true" ]; then
+    echo "run-tool ADVISORY rc=${rc} run=[${RUN}] :: reported, not blocking" >&2
+    rc=0
+  fi
 fi
 exit "${rc}"

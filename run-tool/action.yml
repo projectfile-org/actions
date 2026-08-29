@@ -91,6 +91,21 @@ inputs:
     description: Image pull policy (always|missing|never); empty keeps run.sh's always default.
     required: false
     default: ""
+  advisory:
+    # Non-blocking verdict for a tool whose findings are worth READING
+    # before they are worth a red build (a young web linter). `true` =>
+    # run.sh prints its usual named-cause failure line, adds an advisory
+    # verdict, and exits 0; the step is green and nothing downstream is
+    # skipped. ci-resolver renders it from the tool's `advisory:` manifest
+    # field. It rides an action INPUT rather than the step's own
+    # `continue-on-error` because the rc decode already lives in run.sh, so
+    # one code path behaves identically on every forge regardless of how
+    # completely a runner implements that step knob. Anything but the literal
+    # `true` is blocking — fail-closed, so a typo never disarms a gate.
+    # MUST NOT be used on a scanner, a publish or a test.
+    description: Report a failure but exit 0 (only the literal `true` opts in).
+    required: false
+    default: ""
 runs:
   using: composite
   steps:
@@ -102,6 +117,7 @@ runs:
         ENV_VARS: ${{ inputs.env }}
         MOUNTS: ${{ inputs.mounts }}
         NETWORK: ${{ inputs.network }}
+        ADVISORY: ${{ inputs.advisory }}
         # An explicit input WINS; an empty input falls through to the CALLER's ambient
         # RUN_TOOL_PULL (an instance override — act.mk sets one fleet-wide for its offline
         # contract) and only then to run.sh's `always` default. A bare `RUN_TOOL_PULL:
