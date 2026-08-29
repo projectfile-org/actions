@@ -1,0 +1,18 @@
+# SPDX-FileCopyrightText: 2026 Damián Búho <damian.buho@proton.me>
+#
+# SPDX-License-Identifier: MIT
+
+# The fleet's YAML ruleset, restated here because this repo's lefthook calls the
+# HOST yamllint directly rather than the d9t/python-tools `auto-yamllint`, whose
+# image config would otherwise supply it. Without this file yamllint falls back
+# to its built-in default — line-length ERROR at 80 — which no action.yml in this
+# repo has ever satisfied: the prose above each input IS the documentation of that
+# input, and 80 columns is not what it was written to.
+extends: default
+rules:
+  line-length:
+    level: warning
+    max: 120
+ignore: |-
+  vendor
+  node_modules
