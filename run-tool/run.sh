@@ -62,8 +62,12 @@ fi
 # env_pairs is the same list in the shape the HOST path needs (see prefer-local below):
 # `env NAME=VALUE… cmd` takes only ASSIGNMENTS, so a bare NAME is dropped there — it is
 # already in the runner's own environment, which a host run inherits outright.
-env_opts=()
-env_pairs=()
+# b19-log filters at B19_VERBOSITY, whose default is `warn` — that drops every info/note
+# line, so a tool that PASSES prints NOTHING and reads as one that never ran. m6e-run
+# already forces `info` for the make plane; a forge log is pure capture, so it wants the
+# same. Seeded FIRST because docker keeps the LAST --env: a tool's own set-env still wins.
+env_opts=(--env "B19_VERBOSITY=${B19_VERBOSITY:-info}")
+env_pairs=("B19_VERBOSITY=${B19_VERBOSITY:-info}")
 env_names=""
 while IFS= read -r pair; do
   [ -n "${pair}" ] || continue
@@ -150,7 +154,7 @@ else
   done
 fi
 
-echo "run-tool ref=${ref} run=${RUN} env=[${env_names}] mounts=[${MOUNTS:-}] network=[${NETWORK:-}] pull=${RUN_TOOL_PULL:-always} advisory=${ADVISORY:-false}"
+echo "run-tool ref=${ref} run=${RUN} env=[${env_names}] mounts=[${MOUNTS:-}] network=[${NETWORK:-}] pull=${RUN_TOOL_PULL:-always} verbosity=${B19_VERBOSITY:-info} advisory=${ADVISORY:-false}"
 echo "run-tool prefer-local=${prefer_local} entrypoint=${entrypoint} :: ${prefer_reason}"
 # --pull always: tool images ride MUTABLE tags (BASE_IMAGE_DEFAULT_VERSION || latest),
 # so a runner that has already cached the tag would otherwise run a STALE image forever —
