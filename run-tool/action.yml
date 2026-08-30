@@ -3,8 +3,8 @@
 # SPDX-License-Identifier: MIT
 #
 # run-tool — run a containerised tool on the HOST runner via `docker run`, NOT as a
-# job `container:`. ci-resolver derives this for every plain tool that ships an
-# `image:` (see projectfile/ci-resolver §Session 10 / the-last-stand DECISION 1).
+# job `container:`. pf-ci derives this for every plain tool that ships an
+# `image:` (see projectfile/ci §Session 10 / the-last-stand DECISION 1).
 #
 # Why not a job `container:`? A Forgejo/GHA job container must ship Node (the runner
 # execs the JS `checkout`/`download-artifact` actions INSIDE it) and a keep-alive
@@ -14,7 +14,7 @@
 # lowering, not the runner. Running the job on the HOST (which has Node/git/docker)
 # and shelling to `docker run` here is the cloud analogue of m6e's M6E_RUN, with the
 # imperative part kept in this versioned action so the rendered workflow stays
-# declarative (ci-resolver Law 2).
+# declarative (pf-ci Law 2).
 #
 # A tool may also run WITHOUT a container: when the operator bakes it into the runner
 # image and names it in the RUN_TOOL_PREFER_LOCAL env allowlist, run.sh execs the host
@@ -24,9 +24,9 @@
 # refusals and the operator rule in run.sh.
 #
 # The image arrives as TWO inputs (image/version) and recomposed: image carries its
-# FULL path (the registry host embedded by ci-resolver via a ci.images var, or a bare
+# FULL path (the registry host embedded by pf-ci via a ci.images var, or a bare
 # Docker-Hub namespace); version is the tag. An external ref carrying its own tag
-# arrives pre-split into image + version by ci-resolver. The `run` string is exec'd in
+# arrives pre-split into image + version by pf-ci. The `run` string is exec'd in
 # the container: wrapped in `sh -c` only when it contains shell metacharacters
 # (&&, ||, |, ;, redirects, $(…)); word-split directly otherwise. The latter keeps
 # distroless images (e.g. hadolint/hadolint, FROM scratch) working — they carry no sh.
@@ -34,7 +34,7 @@ name: run-tool
 description: Run a containerised tool on the host runner via docker run (never a job container).
 inputs:
   image:
-    # Full image path — a registry-qualified ref (ci-resolver embeds the registry via
+    # Full image path — a registry-qualified ref (pf-ci embeds the registry via
     # a ci.images var: `kiota.ch/d9t/js-tools`) OR a bare Docker-Hub namespace/name
     # (`hadolint/hadolint`). NO tag: the action appends :<version>. EXCEPTION: an
     # instance override (`${{ vars.HADOLINT_IMAGE }}`) set to a FULL tagged mirror ref
@@ -43,7 +43,7 @@ inputs:
     description: Image path (registry host optional; no tag unless an instance override pins the whole ref).
     required: true
   version:
-    # Image tag. ci-resolver passes the single BASE_IMAGE_DEFAULT_VERSION || latest
+    # Image tag. pf-ci passes the single BASE_IMAGE_DEFAULT_VERSION || latest
     # expression for a registry-relative path, or the verbatim tag of an external ref.
     description: Image tag.
     required: true
@@ -83,7 +83,7 @@ inputs:
     required: false
     default: ""
   pull:
-    # docker/podman `--pull` policy (RUN_TOOL_PULL). ci-resolver sets `missing` for an
+    # docker/podman `--pull` policy (RUN_TOOL_PULL). pf-ci sets `missing` for an
     # IMMUTABLE pinned tag (fetch once, reuse — re-pulling an unmovable digest each run
     # only spends registry rate-limit budget) and leaves it EMPTY for a mutable dev↔latest
     # tag, so run.sh keeps its secure `always` default and never runs a stale freshly-pushed
@@ -96,7 +96,7 @@ inputs:
     # before they are worth a red build (a young web linter). `true` =>
     # run.sh prints its usual named-cause failure line, adds an advisory
     # verdict, and exits 0; the step is green and nothing downstream is
-    # skipped. ci-resolver renders it from the tool's `advisory:` manifest
+    # skipped. pf-ci renders it from the tool's `advisory:` manifest
     # field. It rides an action INPUT rather than the step's own
     # `continue-on-error` because the rc decode already lives in run.sh, so
     # one code path behaves identically on every forge regardless of how

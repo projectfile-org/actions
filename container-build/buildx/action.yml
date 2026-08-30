@@ -3,17 +3,17 @@
 # SPDX-License-Identifier: MIT
 #
 # container-build/buildx — the BUILDX (daemon) realisation of the `container-build`
-# provider leaf (see projectfile/ci-resolver general-plan.md, Q3). ci-resolver keeps
+# provider leaf (see projectfile/ci general-plan.md, Q3). pf-ci keeps
 # only "which provider + ordering" (the neutral DAG); the recipe + the OCI-tar
 # build→scan hand-off live HERE, pinned in workflows as
 # `projectfile/ci-actions/container-build/buildx@v1`. Its daemonless sibling
 # `container-build/buildah` emits the SAME tar — the two are drop-in analogues
-# selected per-target by ci-resolver (gha/forgejo default buildx; Tekton buildah).
+# selected per-target by pf-ci (gha/forgejo default buildx; Tekton buildah).
 name: container-build-buildx
 description: Build a Dockerfile to an OCI archive tar (buildx) and upload it as a cell-keyed artifact.
 inputs:
   artifact-name:
-    # Cell-keyed stem from ci-resolver (image-<axis>-…). The build→scan hand-off
+    # Cell-keyed stem from pf-ci (image-<axis>-…). The build→scan hand-off
     # contract: this action emits <artifact-name>.tar and uploads it under
     # <artifact-name>, so a downstream image-scan in the same cell pulls only its
     # own tar and reads it DAEMONLESSLY — no registry, no intra-pipeline creds.
@@ -21,7 +21,7 @@ inputs:
     required: true
   build-args:
     # Newline-separated build-arg NAME=VALUE pairs (matrix axes + the manifest's
-    # var/get/ci args, resolved by ci-resolver). The VALUE rides the input because a
+    # var/get/ci args, resolved by pf-ci). The VALUE rides the input because a
     # composite action does NOT inherit the caller job's `env:` as process env (the
     # Forgejo runner drops it) — a by-NAME `--build-arg NAME` passthrough would build
     # with an empty arg. A bare NAME (no `=`) falls back to reading it from env.
@@ -45,7 +45,7 @@ inputs:
     required: false
     default: ""
   image:
-    # The resolved image ref ci-resolver composes from the project basename
+    # The resolved image ref pf-ci composes from the project basename
     # (<registry>/<ns>/<name>:<tag>). Stamped into the OCI archive (name=) so the
     # tar is self-describing — a downstream `docker load` restores THIS tag and the
     # compose stack finds it. Empty => anonymous archive (the historical behaviour).
@@ -57,7 +57,7 @@ inputs:
     required: false
     default: "."
   pf-cli-image:
-    # The projectfile/cli image ref (registry + tag) ci-resolver composes from the
+    # The projectfile/cli image ref (registry + tag) pf-ci composes from the
     # ci.images PF_CLI_IMAGE var. oci-labels.sh reads the projectfile through it when
     # no host pf-cli exists (the hostexecutor case) — WITHOUT it the projectfile
     # labels are silently skipped. Rides a `with:` input, not job env: the Forgejo
@@ -66,14 +66,14 @@ inputs:
     required: false
     default: ""
   target:
-    # Dockerfile stage to build (buildx --target), from ci-resolver's per-lowering
+    # Dockerfile stage to build (buildx --target), from pf-ci's per-lowering
     # org.projectfile.ci.build-target.<gha|forgejo>. Empty => no --target => last
     # stage, matching the make-plane buildx-build default.
     description: Dockerfile stage to build (empty => last stage).
     required: false
     default: ""
   platform:
-    # Target architecture for THIS cell, bound by ci-resolver to the M6E_ARCH axis it
+    # Target architecture for THIS cell, bound by pf-ci to the M6E_ARCH axis it
     # mints from org.projectfile.architecture. A bare arch (`arm64`); platform.sh composes
     # `linux/` and gates the QEMU binfmt handler before the build. One arch per call, so
     # `--output type=docker` still emits the single-image archive every consumer reads —

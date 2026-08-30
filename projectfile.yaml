@@ -9,15 +9,15 @@ identity:
   created: "2026-06-04"
   name: ci-actions
   summary:
-    en: External provider action library for the projectfile ci-resolver
-    es: Biblioteca de acciones de proveedores externos para el ci-resolver de projectfile
-    uk: Бібліотека дій зовнішніх провайдерів для ci-resolver у projectfile
+    en: External provider action library for the projectfile pf-ci
+    es: Biblioteca de acciones de proveedores externos para el pf-ci de projectfile
+    uk: Бібліотека дій зовнішніх провайдерів для pf-ci у projectfile
   title:
     en: projectfile/ci-actions
   description:
-    en: The external provider action library for ci-resolver. Each provider name maps to one composite action, pinned and consumed as projectfile/ci-actions/<provider>@v1; the resolver keeps the dispatch while this library owns the native CI recipe for each target (Ports and Adapters).
-    es: La biblioteca de acciones de proveedores externos para ci-resolver. Cada nombre de proveedor se corresponde con una acción compuesta, fijada y consumida como projectfile/ci-actions/<provider>@v1; el resolver conserva el despacho mientras esta biblioteca posee la receta de CI nativa para cada objetivo (Ports and Adapters).
-    uk: Бібліотека дій зовнішніх провайдерів для ci-resolver. Кожне імʼя провайдера відповідає одній композитній дії, зафіксованій і використовуваній як projectfile/ci-actions/<provider>@v1; резолвер тримає диспетчеризацію, а ця бібліотека володіє рідною CI-рецептою для кожної цілі (Ports and Adapters).
+    en: The external provider action library for pf-ci. Each provider name maps to one composite action, pinned and consumed as projectfile/ci-actions/<provider>@v1; the resolver keeps the dispatch while this library owns the native CI recipe for each target (Ports and Adapters).
+    es: La biblioteca de acciones de proveedores externos para pf-ci. Cada nombre de proveedor se corresponde con una acción compuesta, fijada y consumida como projectfile/ci-actions/<provider>@v1; el resolver conserva el despacho mientras esta biblioteca posee la receta de CI nativa para cada objetivo (Ports and Adapters).
+    uk: Бібліотека дій зовнішніх провайдерів для pf-ci. Кожне імʼя провайдера відповідає одній композитній дії, зафіксованій і використовуваній як projectfile/ci-actions/<provider>@v1; резолвер тримає диспетчеризацію, а ця бібліотека володіє рідною CI-рецептою для кожної цілі (Ports and Adapters).
 includes:
   - https://kiota.ch/damian-buho/metadata/raw/branch/main/include.yaml
   - https://kiota.ch/projectfile/metadata/raw/branch/main/include.yaml
@@ -38,7 +38,7 @@ links:
 keywords:
   - ci-actions
   - projectfile
-  - ci-resolver
+  - pf-ci
   - github-actions
   - composite-action
   - provider

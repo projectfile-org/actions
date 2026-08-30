@@ -3,17 +3,17 @@
 # SPDX-License-Identifier: MIT
 #
 # secrets-provision — materialise the `.secrets/` tree a compose `secrets:` block
-# mounts, BEFORE dc-up-d. The cloud (ci-resolver) half of the
+# mounts, BEFORE dc-up-d. The cloud (pf-ci) half of the
 # `org.projectfile.ci.secrets` provisioning contract (`m6e/secrets-system.md`);
 # the m6e half reads the SAME declarations and calls the SAME dispatch logic.
 #
-# One source of truth, read by both lowerings: ci-resolver serializes the
+# One source of truth, read by both lowerings: pf-ci serializes the
 # `org.projectfile.ci.secrets` subtree as JSON into `declarations:`; provision.sh
 # dispatches each entry — `value:` writes a literal verbatim, `docker:` runs
 # `docker run <resolved-image> <run>` and captures stdout as the secret. The
 # recipe library (openssl, htpasswd, m6e-secret-*) lives in the misc-tools image,
 # NOT here — a new secret kind is one image edit + a `docker: { run: ... }`
-# declaration, no ci-actions/ci-resolver redeploy. This action is a thin
+# declaration, no ci-actions/pf-ci redeploy. This action is a thin
 # dispatcher by design (the analogue of run-tool: the lowering pins HOW here, the
 # DAG carries only WHICH + WHEN).
 #
@@ -53,7 +53,7 @@ inputs:
   default-image:
     # Fully-formed misc-tools image ref (registry + tag) — where `docker:` shorthand
     # recipes and `docker:` object declarations with no `image:` run. openssl,
-    # htpasswd, and the m6e-secret-* recipes live here. ci-resolver threads the
+    # htpasswd, and the m6e-secret-* recipes live here. pf-ci threads the
     # D9T_MISC_TOOLS_IMAGE var the same way it threads a tool manifest's image var.
     description: "Fully-formed misc-tools image ref for the docker: shorthand / no-image case."
     required: false

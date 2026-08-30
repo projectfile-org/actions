@@ -9,8 +9,8 @@
 #
 # It exists as a pinned action rather than an inline `run: docker load` because the
 # load needs the same shared-store retry container-build/buildah carries, and the
-# recipe belongs in the versioned action, not in the rendered YAML (ci-resolver
-# Law 2). ci-resolver keeps only the decision to load and the archive name.
+# recipe belongs in the versioned action, not in the rendered YAML (pf-ci
+# Law 2). pf-ci keeps only the decision to load and the archive name.
 name: container-load
 description: Load a cell's build archive into the runner image store, retrying the shared-store race.
 inputs:

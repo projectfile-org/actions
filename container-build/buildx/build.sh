@@ -43,7 +43,7 @@ std_args+=(--build-arg "M6E_AI=${M6E_AI:-N}")
 [ -n "${NAMESPACE:-}" ] && std_args+=(--build-arg "M6E_NAMESPACE=${NAMESPACE}")
 [ -n "${PROJECT:-}" ]   && std_args+=(--build-arg "M6E_PROJECT=${PROJECT}")
 
-# Dockerfile stage selection (mirror the make-plane buildx-build): ci-resolver
+# Dockerfile stage selection (mirror the make-plane buildx-build): pf-ci
 # passes org.projectfile.ci.build-target.<gha|forgejo> as M6E_BUILD_TARGET. Empty
 # => no --target => last stage.
 target_args=()

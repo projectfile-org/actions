@@ -5,7 +5,7 @@
 #
 # What we are trying to do: materialise the `.secrets/` tree a compose `secrets:`
 # block mounts, from the org.projectfile.ci.secrets declarations. This is the
-# cloud (ci-resolver) half of the provisioning contract; the m6e half reads the
+# cloud (pf-ci) half of the provisioning contract; the m6e half reads the
 # SAME declarations (the one source of truth) and calls the same dispatch logic.
 # Two secret kinds only:
 #   value:  write a literal string verbatim to the file

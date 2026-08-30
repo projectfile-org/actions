@@ -5,7 +5,7 @@
 #
 # What we are trying to do: attach this cell's built binary to the Forgejo release
 # tagged $VERSION. The binary was produced by the build-binaries cell and restored
-# to the workspace by ci-resolver's download-artifact step (the build→consumer
+# to the workspace by pf-ci's download-artifact step (the build→consumer
 # hand-off); we locate it by suffixing the resolved artifact path with the cell
 # axes. The tag is both the release tag and the title (tea's SDK requires a
 # non-empty title). Create wins on the first matrix cell; the 2nd..Nth cell (or a

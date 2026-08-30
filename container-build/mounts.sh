@@ -4,7 +4,7 @@
 # SPDX-License-Identifier: MIT
 #
 # What we are doing: satisfy each ABSTRACT bind declared in $MOUNTS (the newline
-# name=mountpoint list ci-resolver lowers from a tool's `mounts` map) with a
+# name=mountpoint list pf-ci lowers from a tool's `mounts` map) with a
 # throwaway EMPTY directory and a `--build-context <name>=<dir>` flag. On an
 # ephemeral CI runner there is no seeded cache, so every declared bind is empty —
 # a Dockerfile `RUN --mount=from=<name>` then sees an empty mount and downloads

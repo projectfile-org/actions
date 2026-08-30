@@ -25,7 +25,7 @@ source "${GITHUB_ACTION_PATH}/../labels.sh"
 # shellcheck source-path=SCRIPTDIR source=../platform.sh
 source "${GITHUB_ACTION_PATH}/../platform.sh"
 
-# Dockerfile stage selection (mirror the make-plane buildah-build): ci-resolver
+# Dockerfile stage selection (mirror the make-plane buildah-build): pf-ci
 # passes org.projectfile.ci.build-target.<gha|forgejo> as M6E_BUILD_TARGET. Empty
 # => no --target => last stage.
 target_args=()

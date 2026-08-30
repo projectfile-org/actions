@@ -3,7 +3,7 @@
 #
 # SPDX-License-Identifier: MIT
 #
-# What we are doing: take this cell's OCI archive (already pulled by ci-resolver's
+# What we are doing: take this cell's OCI archive (already pulled by pf-ci's
 # download-artifact step) and publish it DIRECTLY to the registry with skopeo —
 # `skopeo copy docker-archive:<tar> docker://<ref>` copies the archive to the
 # registry WITHOUT ever loading it into the daemon's image store. The previous
@@ -293,7 +293,7 @@ fi
 printf '%s\n' "${ref_by_digest}" > "${M6E_DIGEST_FILE:-image.digest}"
 
 # Export the tag cascade the same workspace-file way, for the events emit step
-# ci-resolver renders after this action (a tool declaring `emit:`). A downstream
+# pf-ci renders after this action (a tool declaring `emit:`). A downstream
 # consumer must know WHICH tags moved — `latest` moving is a different fact from a
 # patch tag appearing — and the cascade is derived HERE, from VERSION, so reading it
 # back beats reimplementing the semver fan-out in the emitting step. A JSON array,

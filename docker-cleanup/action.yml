@@ -3,13 +3,13 @@
 # SPDX-License-Identifier: MIT
 #
 # docker-cleanup — reap the run-scoped image tag and live-stack network a fused job
-# left behind. ci-resolver lowers a Load-ing job's teardown to this single always()-
+# left behind. pf-ci lowers a Load-ing job's teardown to this single always()-
 # guarded step (the fused `live` stack: container-build stamps a UNIQUE-per-run tag,
 # `docker load` enters it into the store, `compose up` creates a run-scoped network;
 # without reaping both, every run accumulates one image and possibly one network).
 # Keeping the imperative reaps + their guards in this versioned action leaves the
 # rendered workflow a clean `uses:` with no inline `docker rmi`/`docker network` shell
-# (ci-resolver Law 2 — the recipe lives in the pinned action, not the YAML).
+# (pf-ci Law 2 — the recipe lives in the pinned action, not the YAML).
 #
 # Both inputs are OPTIONAL: a non-Load job has no image to reap (and never created a
 # network), so the resolver emits empty for both and cleanup.sh becomes a no-op.

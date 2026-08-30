@@ -3,10 +3,10 @@
 # SPDX-License-Identifier: MIT
 #
 # oci-push — the registry-push realisation of the `oci-push` provider leaf (see
-# projectfile/ci-resolver §9 publish). ci-resolver keeps only "which provider +
+# projectfile/ci §9 publish). pf-ci keeps only "which provider +
 # ordering" (the neutral DAG); the recipe lives HERE, pinned in workflows as
 # `projectfile/ci-actions/oci-push@v1`. It is the CONSUMER end of the same
-# build→artifact hand-off the image scans use: ci-resolver emits a download-artifact
+# build→artifact hand-off the image scans use: pf-ci emits a download-artifact
 # step that pulls this cell's `<artifact-name>.tar` BEFORE this action runs, so the
 # action only logs in and pushes — no build, no buildx.
 #
@@ -27,7 +27,7 @@
 # a tag, and Docker Hub needs a non-registry API for it.
 #
 # Auth is NOT an input: the leaf declares `env: [REGISTRY_USERNAME, REGISTRY_PASSWORD]`
-# and ci-resolver's per-target credentials overlay binds those NAMES to secret refs on
+# and pf-ci's per-target credentials overlay binds those NAMES to secret refs on
 # THIS job. A composite action's bash sees the job's OS env (it cannot read the
 # `secrets` context), so push.sh reads the two vars directly — the env NAME is what
 # scopes the secret to the push job.
@@ -35,15 +35,15 @@ name: oci-push
 description: Log in and copy a cell-keyed OCI archive tar straight to a registry via skopeo.
 inputs:
   artifact-name:
-    # Cell-keyed stem from ci-resolver (image-<axis>-…); the matching <artifact-name>.tar
-    # was pulled by the download-artifact step ci-resolver emits ahead of this action.
+    # Cell-keyed stem from pf-ci (image-<axis>-…); the matching <artifact-name>.tar
+    # was pulled by the download-artifact step pf-ci emits ahead of this action.
     # SUPERSEDED by `archives` when the project declares architectures: the cell then
     # carries one tar per arch and no single stem can name them.
     description: Cell-keyed artifact + tar stem (ignored when `archives` is set).
     required: false
     default: ""
   image:
-    # The basename ref ci-resolver composed (<ns>/<name>:<tag>, Docker Hub form). Its
+    # The basename ref pf-ci composed (<ns>/<name>:<tag>, Docker Hub form). Its
     # repo half (everything left of the last `:`) is the prefix each cascade tag is
     # pushed under; its tag half is the lone tag pushed when VERSION is empty (the
     # no-cascade fallback). skopeo ignores the archive's stamped name and renames at
@@ -51,7 +51,7 @@ inputs:
     description: Basename ref whose repo half prefixes every push tag.
     required: true
   version:
-    # The git ref this build published from (ci-resolver passes ${{ github.ref_name }}).
+    # The git ref this build published from (pf-ci passes ${{ github.ref_name }}).
     # On a PREVIEW run that is a branch name and `preview` below takes over; on a release
     # it is the tag, and push.sh lowers it into the
     # SEMVER tag cascade: a stable X.Y.Z pushes X.Y.Z + X.Y + X + latest; a pre-release
@@ -62,7 +62,7 @@ inputs:
     default: ""
   preview:
     # The BRANCH name when this run is a preview — a push to a branch that is not the
-    # project default (ci-resolver gates the publish node on the `preview` event token and
+    # project default (pf-ci gates the publish node on the `preview` event token and
     # threads the ref name here; empty on a tag). It OVERRIDES `version` in tags.sh: the
     # cascade collapses to the single `latest-<branch>` tag, so `latest` and every semver
     # head keep pointing at the last release. It also narrows the destinations to the
@@ -72,7 +72,7 @@ inputs:
     required: false
     default: ""
   registry:
-    # Push-target registry — the OUTPUT_REGISTRY forge var ci-resolver threads (the
+    # Push-target registry — the OUTPUT_REGISTRY forge var pf-ci threads (the
     # forge-dependent place THIS project publishes TO). DISTINCT from the per-namespace
     # INPUT registries (B19_DOCKER_REGISTRY & friends = where base images come FROM); the
     # two can differ (pull b19/go from kiota.ch, publish d9t/go-tools to ghcr.io). Set per
@@ -96,7 +96,7 @@ inputs:
     default: ""
   sink:
     # The publish CELL's own destination — the sink NAME this cell publishes, the
-    # rest of `refs` skipped. ci-resolver binds it to the destination matrix axis, so
+    # rest of `refs` skipped. pf-ci binds it to the destination matrix axis, so
     # a job with two declared sinks runs two cells: one credential each, and a
     # registry refusing a push fails ITS cell instead of the whole release. EMPTY
     # keeps the single-job fan-out (every declared destination from one cell).
@@ -104,7 +104,7 @@ inputs:
     required: false
     default: ""
   archives:
-    # One `<arch> <artifact-name>` line per DECLARED architecture, bound by ci-resolver
+    # One `<arch> <artifact-name>` line per DECLARED architecture, bound by pf-ci
     # from the M6E_ARCH axis it mints out of org.projectfile.architecture. Present => this
     # cell publishes a MANIFEST LIST: the per-arch tars are assembled into one index and
     # pushed to the cascade tags, so the registry serves `<repo>:1.2.3` as multi-arch and

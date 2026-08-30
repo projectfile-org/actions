@@ -20,7 +20,7 @@ set -euo pipefail
 : "${RUN:?run-tool: run is required}"
 
 # Recompose a FULLY-QUALIFIED ref. The image path arrives carrying its FULL registry
-# prefix (ci-resolver embeds it via a ci.images var: `kiota.ch/d9t/...`), so an
+# prefix (pf-ci embeds it via a ci.images var: `kiota.ch/d9t/...`), so an
 # already-qualified ref is used VERBATIM, and only a bare Docker-Hub-namespace name
 # (`hadolint/hadolint`) is prefixed `docker.io/`. The explicit host is load-bearing on
 # the forge runner's podman backend: unlike the Docker daemon (which reads a bare
@@ -54,7 +54,7 @@ fi
 # action input because a composite action does NOT inherit the caller job's `env:` as
 # PROCESS env (the Forgejo runner drops it) — a by-NAME `--env NAME` passthrough would
 # read an UNSET var and forward nothing (the empty-M6E_IMAGE_ARCHIVE scanner failure).
-# ci-resolver resolved each value (matrix axis, archive path, a per-target credential
+# pf-ci resolved each value (matrix axis, archive path, a per-target credential
 # ref) at render time. A line with NO `=` is a bare NAME (no value resolved) and is
 # forwarded by name — the graceful fallback to the runner's own OS env. We log only the
 # NAMES (left of the first `=`) so a forwarded secret value never reaches the log.
@@ -111,7 +111,7 @@ net_opts=()
 # Prefer a HOST binary over the container when the operator has baked the tool into the
 # runner image (the `COPY pf-cli/pf-bridge` case) and allowlisted it here. This is the
 # forge twin of the make lowering's `m6e.prefer-local` (m6e core/ci/020-executor.mk),
-# which ci-resolver does NOT lower: that key sits under the `m6e:` block, and it is set on
+# which pf-ci does NOT lower: that key sits under the `m6e:` block, and it is set on
 # nearly every tool in the fleet, so it cannot discriminate WHICH binaries a given runner
 # actually ships. That knowledge belongs to the runner, so the switch is a runner env
 # allowlist — the same shape as the RUN_TOOL_PULL knob above.

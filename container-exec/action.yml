@@ -3,19 +3,19 @@
 # SPDX-License-Identifier: MIT
 #
 # container-exec — run a command INSIDE an already-running compose container on the
-# HOST runner, via `docker exec`. ci-resolver lowers the fused live job's test tool
+# HOST runner, via `docker exec`. pf-ci lowers the fused live job's test tool
 # to this (the `live` fuse: dc-up-d brings the stack up, container-exec runs the test
 # inside it, dc-down tears it down). It is the exec sibling of run-tool: run-tool
 # `docker run`s a fresh, `--rm` tool image; this `docker exec`s into the persistent
 # stack container by name — so on failure the container is STILL ALIVE and can be
 # inspected (run-tool's --rm container is already gone). Keeping the imperative exec
 # + the post-mortem in this versioned action leaves the rendered workflow a clean
-# `uses:` with no inline `docker exec` shell (ci-resolver Law 2).
+# `uses:` with no inline `docker exec` shell (pf-ci Law 2).
 name: container-exec
 description: Exec a command inside a running compose container on the host runner (with on-failure post-mortem).
 inputs:
   container:
-    # The running container's NAME — the live-stack instance ci-resolver derives onto
+    # The running container's NAME — the live-stack instance pf-ci derives onto
     # the job env (M6E_CONTAINER_INSTANCE = ci-<basename>, per matrix cell). The action
     # is name-driven, so the model names no container and a local `make` agrees.
     description: Name of the running container to exec into.

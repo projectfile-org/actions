@@ -3,7 +3,7 @@
 #
 # SPDX-License-Identifier: MIT
 #
-# What we are doing: turn the `platform` input (the M6E_ARCH axis value ci-resolver
+# What we are doing: turn the `platform` input (the M6E_ARCH axis value pf-ci
 # mints from org.projectfile.architecture) into the backend's --platform flag, and
 # refuse a foreign arch this kernel cannot emulate BEFORE the build starts — a missing
 # binfmt handler otherwise surfaces as an exec-format error deep inside a RUN step,
