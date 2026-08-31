@@ -65,9 +65,16 @@ fi
 # b19-log filters at B19_VERBOSITY, whose default is `warn` — that drops every info/note
 # line, so a tool that PASSES prints NOTHING and reads as one that never ran. m6e-run
 # already forces `info` for the make plane; a forge log is pure capture, so it wants the
-# same. Seeded FIRST because docker keeps the LAST --env: a tool's own set-env still wins.
-env_opts=(--env "B19_VERBOSITY=${B19_VERBOSITY:-info}")
-env_pairs=("B19_VERBOSITY=${B19_VERBOSITY:-info}")
+# same. A FLOOR, not a default: the runner image BAKES `B19_VERBOSITY=warn`
+# (r8e/forgejo-runner) and a composite action inherits the runner's process env, so a
+# `:-info` fallback never fires and every audit stays mute. Only a MORE verbose level
+# survives. Seeded FIRST because docker keeps the LAST --env: a tool's set-env still wins.
+case "${B19_VERBOSITY:-}" in
+  debug) verbosity="${B19_VERBOSITY}" ;;
+  *)     verbosity=info ;;
+esac
+env_opts=(--env "B19_VERBOSITY=${verbosity}")
+env_pairs=("B19_VERBOSITY=${verbosity}")
 env_names=""
 while IFS= read -r pair; do
   [ -n "${pair}" ] || continue
@@ -154,7 +161,7 @@ else
   done
 fi
 
-echo "run-tool ref=${ref} run=${RUN} env=[${env_names}] mounts=[${MOUNTS:-}] network=[${NETWORK:-}] pull=${RUN_TOOL_PULL:-always} verbosity=${B19_VERBOSITY:-info} advisory=${ADVISORY:-false}"
+echo "run-tool ref=${ref} run=${RUN} env=[${env_names}] mounts=[${MOUNTS:-}] network=[${NETWORK:-}] pull=${RUN_TOOL_PULL:-always} verbosity=${verbosity} advisory=${ADVISORY:-false}"
 echo "run-tool prefer-local=${prefer_local} entrypoint=${entrypoint} :: ${prefer_reason}"
 # --pull always: tool images ride MUTABLE tags (BASE_IMAGE_DEFAULT_VERSION || latest),
 # so a runner that has already cached the tag would otherwise run a STALE image forever —
