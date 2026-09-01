@@ -26,6 +26,11 @@
 # tag is the release title (tea's SDK requires a non-empty title — the historical
 # `tea release create --tag`-only call failed with "title is empty").
 #
+# Sidecars: a `.torrent` and a `.magnet` sitting beside the resolved asset are
+# attached to the same release when present. They are located by suffixing the
+# path this action already resolved, so no new input is needed and a project that
+# never opted into BitTorrent seeding is unaffected — an absent file is skipped.
+#
 # Auth is NOT an input: the leaf declares `env: [FORGEJO_TOKEN]` and pf-ci's
 # per-target credentials overlay binds that NAME to a secret ref on THIS job. A
 # composite action's bash sees the job's OS env (it cannot read the `secrets`
@@ -34,7 +39,7 @@
 # DERIVED name (<SINK>_TOKEN) instead, so two destinations never share one secret.
 # `server-url` / `repo` default to the ambient Forgejo Actions context.
 name: forgejo-release
-description: Attach one cell-keyed binary to a Forgejo release via tea (create-then-attach across matrix cells).
+description: Attach one cell-keyed binary, and any .torrent/.magnet beside it, to a Forgejo release via tea.
 inputs:
   version:
     # The git tag this release publishes from (pf-ci passes ${{ github.ref_name }};
@@ -48,7 +53,7 @@ inputs:
     # <path>-<os>-<arch> (TARGET_OS/TARGET_ARCH from the matrix env, GOOS/GOARCH as
     # the fallback). The build→consumer download edge restored the producer's dist/
     # tree to the workspace already.
-    description: Unsuffixed binary path; the cell axes are appended to locate the asset.
+    description: Unsuffixed binary path; the cell axes are appended to locate the asset, and .torrent/.magnet beside it ride along.
     required: true
   server-url:
     # WHERE this cell releases. Empty => the ambient Forgejo Actions context

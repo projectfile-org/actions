@@ -13,6 +13,13 @@
 # to `tea release assets create` — so an os×arch matrix converges on ONE release
 # with one asset per cell.
 #
+# Sidecars ride along: a BitTorrent .torrent and .magnet written beside the binary
+# by the torrent pipeline are attached to the same release when they exist. They are
+# found by SUFFIXING the asset path this action already resolved, so nothing here
+# has to know how the seed folder spells its flat, fleet-unique name — a torrent
+# file's own name is not the name inside its info dict. Absent files are simply not
+# attached, so a project that never opted into seeding sees no change at all.
+#
 # Tunables, all optional:
 #   RELEASE_TIMEOUT  seconds per tea call (default 120)
 #   RELEASE_RETRIES  attach attempts before the cell fails (default 3)
@@ -89,14 +96,15 @@ timeout "${timeout_s}" tea login add --name ci             \
                                      --url "${server_url}" \
                                      --token "${token}" </dev/null
 
-# Bounded attach: the upload is a network crossing that every losing cell makes
-# against the SAME release, so it gets timeout + retry + exponential backoff with
-# jitter. Each attempt first drops a same-named attachment — Forgejo accepts
-# DUPLICATE attachment names, so a re-run (or a retry after a partial upload)
-# would otherwise stack a second pf-cli-linux-amd64 beside the first. This is the
-# tea equivalent of the gh-release path's `gh release upload --clobber`.
+# Bounded attach of ONE file: the upload is a network crossing that every losing
+# cell makes against the SAME release, so it gets timeout + retry + exponential
+# backoff with jitter. Each attempt first drops a same-named attachment — Forgejo
+# accepts DUPLICATE attachment names, so a re-run (or a retry after a partial
+# upload) would otherwise stack a second pf-cli-linux-amd64 beside the first. This
+# is the tea equivalent of the gh-release path's `gh release upload --clobber`.
 attach() {
-	local attempt=1 delay
+	local file="$1" attempt=1 delay name
+	name="${file##*/}"
 	while :; do
 		if timeout "${timeout_s}" tea release assets delete --confirm       \
 		                                                    --repo "${repo}" \
@@ -106,7 +114,7 @@ attach() {
 			log "no stale attachment ${name} on ${VERSION}"
 		fi
 		if timeout "${timeout_s}" tea release assets create --repo "${repo}"    \
-		                                                    "${VERSION}" "${asset}" </dev/null; then
+		                                                    "${VERSION}" "${file}" </dev/null; then
 			log "attached ${name} to release ${VERSION} on attempt ${attempt}"
 			return 0
 		fi
@@ -129,5 +137,16 @@ if timeout "${timeout_s}" tea release create --repo "${repo}"                   
 	log "created release ${VERSION} with ${name}"
 else
 	log "release ${VERSION} exists, attaching ${name}"
-	attach
+	attach "${asset}"
 fi
+
+# Each sidecar goes through the same clobbering attach, and each is independent:
+# one failing does not cost the release the binary that already landed.
+for _suffix in .torrent .magnet; do
+	_sidecar="${asset}${_suffix}"
+	if [ -f "${_sidecar}" ]; then
+		attach "${_sidecar}"
+	else
+		log "no ${_suffix} beside ${name}, nothing to attach"
+	fi
+done
