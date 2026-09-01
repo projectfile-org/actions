@@ -3,38 +3,49 @@
 #
 # SPDX-License-Identifier: MIT
 #
-# What we are trying to do: attach this cell's built binary to the Forgejo release
-# tagged $VERSION. The binary was produced by the build-binaries cell and restored
-# to the workspace by pf-ci's download-artifact step (the build→consumer
-# hand-off); we locate it by suffixing the resolved artifact path with the cell
-# axes. The tag is both the release tag and the title (tea's SDK requires a
-# non-empty title). Create wins on the first matrix cell; the 2nd..Nth cell (or a
-# re-run) hits HTTP 409 "there is already a release for this tag" and falls back
-# to `tea release assets create` — so an os×arch matrix converges on ONE release
-# with one asset per cell.
+# What we are trying to do: mint the Forgejo release tagged $VERSION and attach
+# what this cell produced. Create wins on the first matrix cell; the 2nd..Nth cell
+# (or a re-run) hits HTTP 409 "there is already a release for this tag" and falls
+# back to `tea release assets create` — so a matrix converges on ONE release
+# carrying every cell's assets.
 #
-# Sidecars ride along: a BitTorrent .torrent and .magnet written beside the binary
-# by the torrent pipeline are attached to the same release when they exist. They are
-# found by SUFFIXING the asset path this action already resolved, so nothing here
-# has to know how the seed folder spells its flat, fleet-unique name — a torrent
-# file's own name is not the name inside its info dict. Absent files are simply not
-# attached, so a project that never opted into seeding sees no change at all.
+# TWO modes, chosen by whether RELEASE_PATH is set:
+#
+#   BINARY     RELEASE_PATH names the unsuffixed artifact path. The binary was
+#              produced by the build-binaries cell and restored to the workspace by
+#              pf-ci's download-artifact step (the build→consumer hand-off); we
+#              locate it by suffixing that path with the cell axes.
+#   CREATE-ONLY  RELEASE_PATH is empty, which is a project that ships no binary at
+#              all — a container-only image project. It mints the release with no
+#              primary asset, and needs no TARGET_OS/TARGET_ARCH: it has no cell
+#              axes to suffix with. The release exists so the image's magnet has
+#              somewhere to be published, which is what makes an image release
+#              addressable the same way a binary one is.
+#
+# Sidecars ride along in both modes, and are found two ways because the two modes
+# name their files differently:
+#
+#   beside the asset   a .torrent and .magnet written next to the binary by the
+#                      torrent pipeline, found by SUFFIXING the path this action
+#                      already resolved — so nothing here has to know how the seed
+#                      folder spells its flat, fleet-unique name (a torrent file's
+#                      own name is not the name inside its info dict).
+#   in torrents/       every file in the sidecar directory. Create-only has no asset
+#                      path to suffix, so the image half collects its pair into a
+#                      directory it declares as its CI artifact instead; the download
+#                      edge restores that directory here.
+#
+# Absent files are simply not attached, so a project that never opted into seeding
+# sees no change at all.
 #
 # Tunables, all optional:
-#   RELEASE_TIMEOUT  seconds per tea call (default 120)
-#   RELEASE_RETRIES  attach attempts before the cell fails (default 3)
-#   RELEASE_BACKOFF  base seconds for the exponential backoff (default 2)
+#   RELEASE_TIMEOUT      seconds per tea call (default 120)
+#   RELEASE_RETRIES      attach attempts before the cell fails (default 3)
+#   RELEASE_BACKOFF      base seconds for the exponential backoff (default 2)
+#   RELEASE_SIDECAR_DIR  directory swept for extra assets (default torrents)
 set -euo pipefail
 
 : "${VERSION:?forgejo-release: VERSION (the git tag) is required}"
-: "${RELEASE_PATH:?forgejo-release: RELEASE_PATH (the artifact binary path) is required}"
-# WHICH cell this is — the pair that suffixes the asset name. TARGET_OS/TARGET_ARCH
-# is the language-neutral spelling every toolchain can bind; GOOS/GOARCH remains the
-# fallback so the Go projects that already name their axes that way need no edit.
-target_os="${TARGET_OS:-${GOOS:-}}"
-target_arch="${TARGET_ARCH:-${GOARCH:-}}"
-: "${target_os:?forgejo-release: TARGET_OS (or GOOS) must be set (matrix axis)}"
-: "${target_arch:?forgejo-release: TARGET_ARCH (or GOARCH) must be set (matrix axis)}"
 
 # WHERE this cell releases. The ambient Forgejo Actions context is the default, so
 # a project releasing only to the forge it runs on binds nothing. SERVER_URL/REPO
@@ -64,21 +75,36 @@ if [ -n "${SINK:-}" ]; then
 fi
 : "${token:?forgejo-release: no token bound (credentials overlay: <SINK>_TOKEN or FORGEJO_TOKEN)}"
 
-asset="${RELEASE_PATH}-${target_os}-${target_arch}"
-name="${asset##*/}"
 timeout_s="${RELEASE_TIMEOUT:-120}"
 retries="${RELEASE_RETRIES:-3}"
 backoff="${RELEASE_BACKOFF:-2}"
+sidecar_dir="${RELEASE_SIDECAR_DIR:-torrents}"
 log() { printf '[forgejo-release] %s\n' "$*" >&2; }
 
-if [ ! -f "${asset}" ]; then
-	log "asset not found at ${asset} — the build→consumer download edge should have restored it"
-	exit 1
+# Which mode, and the asset it names. An UNSET release-asset-path is create-only —
+# the template omits the input entirely for a project declaring no kind=binary
+# artifact, so an empty value here is a decision and not a missing configuration.
+asset=""
+if [ -n "${RELEASE_PATH:-}" ]; then
+	# WHICH cell this is — the pair that suffixes the asset name. TARGET_OS/TARGET_ARCH
+	# is the language-neutral spelling every toolchain can bind; GOOS/GOARCH remains the
+	# fallback so the Go projects that already name their axes that way need no edit.
+	# Only the binary mode asks for them: a container-only release has no axis to spend.
+	target_os="${TARGET_OS:-${GOOS:-}}"
+	target_arch="${TARGET_ARCH:-${GOARCH:-}}"
+	: "${target_os:?forgejo-release: TARGET_OS (or GOOS) must be set (matrix axis)}"
+	: "${target_arch:?forgejo-release: TARGET_ARCH (or GOARCH) must be set (matrix axis)}"
+	asset="${RELEASE_PATH}-${target_os}-${target_arch}"
+	if [ ! -f "${asset}" ]; then
+		log "asset not found at ${asset} — the build→consumer download edge should have restored it"
+		exit 1
+	fi
+	# First output of the step. Without it a cell that dies during step setup and one
+	# that blocks on the first tea call look identical: both print nothing at all.
+	log "cell ${target_os}/${target_arch} releasing ${asset##*/} at ${VERSION} on ${server_url}"
+else
+	log "create-only: no binary declared, minting release ${VERSION} on ${server_url} for its sidecars"
 fi
-
-# First output of the step. Without it a cell that dies during step setup and one
-# that blocks on the first tea call look identical: both print nothing at all.
-log "cell ${target_os}/${target_arch} releasing ${name} at ${VERSION} on ${server_url}"
 
 # Isolate tea's config to a per-job tmpdir (tea resolves it via XDG_CONFIG_HOME).
 # The host-mode runner persists ~/.config/tea/config.yml across jobs, so a bare
@@ -130,23 +156,47 @@ attach() {
 }
 
 # Create wins on the first cell; attach wins on cells 2..N (HTTP 409 — the release
-# already exists). The tag is the title (tea SDK requires non-empty).
-if timeout "${timeout_s}" tea release create --repo "${repo}"                         \
-                                             --tag "${VERSION}" --title "${VERSION}" \
-                                             --asset "${asset}" </dev/null; then
-	log "created release ${VERSION} with ${name}"
+# already exists). The tag is the title (tea SDK requires non-empty). Create-only
+# passes no --asset: the release is minted empty and the sidecar sweep below fills
+# it, so a 409 there means another cell got in first and there is nothing to redo.
+if [ -n "${asset}" ]; then
+	if timeout "${timeout_s}" tea release create --repo "${repo}"                         \
+	                                             --tag "${VERSION}" --title "${VERSION}" \
+	                                             --asset "${asset}" </dev/null; then
+		log "created release ${VERSION} with ${asset##*/}"
+	else
+		log "release ${VERSION} exists, attaching ${asset##*/}"
+		attach "${asset}"
+	fi
+elif timeout "${timeout_s}" tea release create --repo "${repo}"                          \
+                                               --tag "${VERSION}" --title "${VERSION}" </dev/null; then
+	log "created release ${VERSION} with no primary asset"
 else
-	log "release ${VERSION} exists, attaching ${name}"
-	attach "${asset}"
+	log "release ${VERSION} already exists, nothing to create"
 fi
 
 # Each sidecar goes through the same clobbering attach, and each is independent:
-# one failing does not cost the release the binary that already landed.
-for _suffix in .torrent .magnet; do
-	_sidecar="${asset}${_suffix}"
-	if [ -f "${_sidecar}" ]; then
+# one failing does not cost the release the binary that already landed. Two
+# sources, because the two modes name their files differently — see the header.
+if [ -n "${asset}" ]; then
+	for _suffix in .torrent .magnet; do
+		_sidecar="${asset}${_suffix}"
+		if [ -f "${_sidecar}" ]; then
+			attach "${_sidecar}"
+		else
+			log "no ${_suffix} beside ${asset##*/}, nothing to attach"
+		fi
+	done
+fi
+
+# The declared sidecar directory, restored here by the download edge from whichever
+# node built the torrents. Absent => this project collects none, which is every
+# project that never opted into seeding.
+if [ -d "${sidecar_dir}" ]; then
+	for _sidecar in "${sidecar_dir}"/*; do
+		[ -f "${_sidecar}" ] || continue
 		attach "${_sidecar}"
-	else
-		log "no ${_suffix} beside ${name}, nothing to attach"
-	fi
-done
+	done
+else
+	log "no ${sidecar_dir}/ directory, no collected sidecars to attach"
+fi
