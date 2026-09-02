@@ -13,7 +13,7 @@
 # binaries it ships all agree. Shared by BOTH build planes:
 #   - make plane:  100-git-state.mk (the M6E_VERSION make var), buildx-build,
 #                  buildah-build, and oci-labels.sh all source this ONE rule.
-#   - forge plane: the projectfile/ci-actions container-build backend derives
+#   - forge plane: the action library’s container-build backend derives
 #                  M6E_VERSION from the checkout here, exactly like it derives
 #                  labels from the shared oci-labels.sh.
 #

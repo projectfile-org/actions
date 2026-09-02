@@ -13,7 +13,7 @@
 # `docker run <resolved-image> <run>` and captures stdout as the secret. The
 # recipe library (openssl, htpasswd, m6e-secret-*) lives in the misc-tools image,
 # NOT here — a new secret kind is one image edit + a `docker: { run: ... }`
-# declaration, no ci-actions/pf-ci redeploy. This action is a thin
+# declaration, no action-library/pf-ci redeploy. This action is a thin
 # dispatcher by design (the analogue of run-tool: the lowering pins HOW here, the
 # DAG carries only WHICH + WHEN).
 #

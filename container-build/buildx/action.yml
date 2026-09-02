@@ -6,7 +6,7 @@
 # provider leaf (see projectfile/ci general-plan.md, Q3). pf-ci keeps
 # only "which provider + ordering" (the neutral DAG); the recipe + the OCI-tar
 # build→scan hand-off live HERE, pinned in workflows as
-# `projectfile/ci-actions/container-build/buildx@v1`. Its daemonless sibling
+# `<owner>/actions/container-build/buildx@v1`. Its daemonless sibling
 # `container-build/buildah` emits the SAME tar — the two are drop-in analogues
 # selected per-target by pf-ci (gha/forgejo default buildx; Tekton buildah).
 name: container-build-buildx

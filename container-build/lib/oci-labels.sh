@@ -9,7 +9,7 @@
 # =============================================================================
 #
 # The ONE computation of image labels, shared by all four build planes:
-# make+buildx, make+buildah, and the projectfile/ci-actions container-build
+# make+buildx, make+buildah, and the action library’s container-build
 # backends on GHA/Forgejo. Emits one KEY=VALUE line per label on stdout;
 # callers convert each line into a `--label` flag (docker buildx build /
 # buildah build / buildah config). All diagnostics go to stderr.

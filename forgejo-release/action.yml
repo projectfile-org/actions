@@ -4,7 +4,7 @@
 #
 # forgejo-release — mint a Forgejo release and attach what a cell produced. pf-ci
 # keeps only "which action + ordering" (the neutral DAG); the recipe lives HERE,
-# pinned in workflows as `projectfile/ci-actions/forgejo-release@v1`. It is the
+# pinned in workflows as `<owner>/actions/forgejo-release@v1`. It is the
 # CONSUMER end of the same build→artifact hand-off the image scans use: pf-ci
 # emits a download-artifact step that restores the producer's `dist/` tree to the
 # workspace BEFORE this action runs, so the action only logs in and attaches — no

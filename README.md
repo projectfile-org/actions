@@ -4,11 +4,11 @@ SPDX-FileCopyrightText: 2026 Damián Búho <damian.buho@proton.me>
 SPDX-License-Identifier: MIT
 -->
 
-# projectfile/ci-actions
+# projectfile/actions
 
 The **external provider library** for [`pf-ci`](../pf-ci). One
 composite action per *provider name*, pinned and consumed as
-`projectfile/ci-actions/<provider>@v1`.
+`<owner>/actions/<provider>@v1`.
 
 ## Why this repo exists (Ports & Adapters)
 
@@ -23,7 +23,7 @@ So the resolver keeps the **dispatch** (provider name + DAG ordering) and this
 library keeps the **recipe**. A provider leaf lowers to:
 
 ```yaml
-- uses: projectfile/ci-actions/container-build/buildx@v1
+- uses: projectfile-org/actions/container-build/buildx@v1
   with:
     artifact-name: image-${{ matrix.B19_UBUNTU_SERIES }}
     build-args: |
@@ -95,11 +95,20 @@ pinned action. Two consequences worth noting:
 ## Forge portability
 
 `uses:` is **not** forge-portable: a GitHub Actions runner resolves
-`projectfile/ci-actions/<name>@v1` against github.com, a Forgejo runner against
-its own instance. This library is therefore **mirrored to each forge** the
-generated workflows run on, so the same bare ref resolves on both. The ref is a
-per-target adapter token in `pf-ci` (`Target.ProviderLib` / `ProviderVer`),
-so a non-mirrored target can override it with a full-URL ref later.
+`<owner>/actions/<name>@v1` against github.com, a Forgejo runner against its own
+instance. This library is therefore **mirrored to each forge** the generated
+workflows run on.
+
+The mirrors do **not** share an owner. A self-hosted forge lets you pick the owner
+freely (`projectfile` on kiota.ch); on github.com that name may already be taken, so
+the mirror lives elsewhere (`projectfile-org`). A bare ref that resolves on one forge
+therefore 404s on the other — and GitHub reports it at *Set up job*, before checkout,
+so every job in the run dies at once with `Unable to resolve action`.
+
+The coordinate is a per-target adapter token in `pf-ci` (`Target.ActionLib` /
+`ActionVer`) defaulting to the Forgejo one. A target whose mirror sits under a
+different owner overrides it with `org.projectfile.ci.<target>.library`, a `repo@tag`
+pin best authored once in a shared include so the fleet stays single-source.
 
 ## Pinning
 
@@ -140,7 +149,7 @@ the `.secrets/<dotted-name>` tree a compose `secrets:` block mounts BEFORE
 `docker:` runs `docker run <resolved-image> <run>` and captures stdout — so a
 new secret kind is a recipe in the `d9t/misc-tools` image (`m6e-secret-*`,
 where openssl/htpasswd live) plus a `docker: { run: ... }` declaration, with no
-ci-actions or pf-ci redeploy. No outputs: secrets are FILES written into
+action-library or pf-ci redeploy. No outputs: secrets are FILES written into
 the workspace (the intra-job file hand-off). The m6e half reads the SAME
 declarations and calls the same dispatch logic.
 

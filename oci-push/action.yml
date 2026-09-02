@@ -5,7 +5,7 @@
 # oci-push — the registry-push realisation of the `oci-push` provider leaf (see
 # projectfile/ci §9 publish). pf-ci keeps only "which provider +
 # ordering" (the neutral DAG); the recipe lives HERE, pinned in workflows as
-# `projectfile/ci-actions/oci-push@v1`. It is the CONSUMER end of the same
+# `<owner>/actions/oci-push@v1`. It is the CONSUMER end of the same
 # build→artifact hand-off the image scans use: pf-ci emits a download-artifact
 # step that pulls this cell's `<artifact-name>.tar` BEFORE this action runs, so the
 # action only logs in and pushes — no build, no buildx.

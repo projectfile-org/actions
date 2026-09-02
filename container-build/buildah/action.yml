@@ -8,7 +8,7 @@
 # (<artifact-name>.tar), so a downstream image-scan consumes it the same way
 # regardless of backend. No docker daemon required — this is the path for engines
 # without one (Tekton) and for rootless GHA/Forgejo runners. Pinned in workflows as
-# `projectfile/ci-actions/container-build/buildah@v1`. Assumes buildah on PATH (the
+# `<owner>/actions/container-build/buildah@v1`. Assumes buildah on PATH (the
 # daemonless premise: the runner/Task image provides it).
 name: container-build-buildah
 description: Build a Dockerfile to an OCI archive tar (buildah) and upload it as a cell-keyed artifact.
