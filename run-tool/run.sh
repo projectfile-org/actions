@@ -115,6 +115,16 @@ done
 net_opts=()
 [ -n "${NETWORK:-}" ] && net_opts=(--network "${NETWORK}")
 
+# A write into the /app/ws bind must land as the HOST checkout's owner, not the image's baked uid.
+user_opts=()
+case "${RUN_TOOL_USER:-}" in
+  keep) user_id="" ;;                          # a backend that already aligns the uid (podman userns=keep-id) opts out
+  "")   user_id="$(id -u):$(id -g)" ;;         # the runner's own identity, the GHA-hosted default
+  *)    user_id="${RUN_TOOL_USER}" ;;          # an operator pinning uid:gid verbatim
+esac
+# Supplementary gid 0 reaches /app itself, which every b19 image ships owner-B19_UID group-root mode 775.
+[ -n "${user_id}" ] && user_opts=(--user "${user_id}" --group-add 0)
+
 # Prefer a HOST binary over the container when the operator has baked the tool into the
 # runner image (the `COPY pf-cli/pf-bridge` case) and allowlisted it here. This is the
 # forge twin of the make lowering's `m6e.prefer-local` (m6e core/ci/020-executor.mk),
@@ -161,7 +171,7 @@ else
   done
 fi
 
-echo "run-tool ref=${ref} run=${RUN} env=[${env_names}] mounts=[${MOUNTS:-}] network=[${NETWORK:-}] pull=${RUN_TOOL_PULL:-always} verbosity=${verbosity} advisory=${ADVISORY:-false}"
+echo "run-tool ref=${ref} run=${RUN} env=[${env_names}] mounts=[${MOUNTS:-}] network=[${NETWORK:-}] pull=${RUN_TOOL_PULL:-always} verbosity=${verbosity} user=[${user_id:-image default}] advisory=${ADVISORY:-false}"
 echo "run-tool prefer-local=${prefer_local} entrypoint=${entrypoint} :: ${prefer_reason}"
 # --pull always: tool images ride MUTABLE tags (BASE_IMAGE_DEFAULT_VERSION || latest),
 # so a runner that has already cached the tag would otherwise run a STALE image forever —
@@ -223,8 +233,8 @@ if [ "${prefer_local}" = yes ]; then
   # what the container path emulates with its by-NAME forwarding.
   env "${env_pairs[@]}" "${cmd[@]}" || rc=$?
 else
-  docker run --rm --pull "${pull}" --volume "${PWD}":/app/ws --workdir /app/ws      \
-    "${net_opts[@]}" "${mount_opts[@]}" "${env_opts[@]}" "${ref}" "${cmd[@]}" || rc=$?
+  docker run --rm --pull "${pull}" --volume "${PWD}":/app/ws --workdir /app/ws                     \
+    "${user_opts[@]}" "${net_opts[@]}" "${mount_opts[@]}" "${env_opts[@]}" "${ref}" "${cmd[@]}" || rc=$?
 fi
 
 if [ "${rc}" -ne 0 ]; then
