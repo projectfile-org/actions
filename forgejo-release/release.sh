@@ -26,10 +26,12 @@
 # name their files differently:
 #
 #   beside the asset   a .torrent and .magnet written next to the binary by the
-#                      torrent pipeline, found by SUFFIXING the path this action
-#                      already resolved — so nothing here has to know how the seed
-#                      folder spells its flat, fleet-unique name (a torrent file's
-#                      own name is not the name inside its info dict).
+#                      torrent pipeline, and a .asc written by the signing step,
+#                      found by SUFFIXING the path this action already resolved — so
+#                      nothing here has to know how the seed folder spells its flat,
+#                      fleet-unique name (a torrent file's own name is not the name
+#                      inside its info dict). Each is independent: a project may sign
+#                      without seeding, seed without signing, or do both.
 #   in torrents/       every file in the sidecar directory. Create-only has no asset
 #                      path to suffix, so the image half collects its pair into a
 #                      directory it declares as its CI artifact instead; the download
@@ -179,7 +181,7 @@ fi
 # one failing does not cost the release the binary that already landed. Two
 # sources, because the two modes name their files differently — see the header.
 if [ -n "${asset}" ]; then
-	for _suffix in .torrent .magnet; do
+	for _suffix in .torrent .magnet .asc; do
 		_sidecar="${asset}${_suffix}"
 		if [ -f "${_sidecar}" ]; then
 			attach "${_sidecar}"

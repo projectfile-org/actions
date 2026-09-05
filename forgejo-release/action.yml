@@ -32,10 +32,12 @@
 # tag is the release title (tea's SDK requires a non-empty title — the historical
 # `tea release create --tag`-only call failed with "title is empty").
 #
-# Sidecars: a `.torrent` and a `.magnet` sitting beside the resolved asset are
-# attached to the same release when present. They are located by suffixing the
+# Sidecars: a `.torrent`, a `.magnet` and a `.asc` sitting beside the resolved asset
+# are attached to the same release when present. They are located by suffixing the
 # path this action already resolved, so no new input is needed and a project that
-# never opted into BitTorrent seeding is unaffected — an absent file is skipped.
+# opted into neither BitTorrent seeding nor signing is unaffected — an absent file is
+# skipped. The `.asc` is a detached armored GPG signature over the asset itself, so a
+# downloader verifies the binary without asking the forge or a registry for anything.
 # A create-only cell has no path to suffix, so every file in `torrents/`
 # (RELEASE_SIDECAR_DIR on the job env) is attached as well — the directory the
 # image half declares as its CI artifact and the download edge restores here.
@@ -68,8 +70,8 @@ inputs:
     # the image's .torrent and .magnet from the sidecar directory.
     description: >-
       Unsuffixed binary path; the cell axes are appended to locate the asset, and
-      any .torrent/.magnet beside it rides along. Empty mints the release with no
-      binary attached.
+      any .torrent/.magnet/.asc beside it rides along. Empty mints the release with
+      no binary attached.
     required: false
     default: ""
   server-url:
