@@ -7,7 +7,7 @@ pre-commit:
       run: yamllint {staged_files}
     - name: shellcheck
       glob: "*.sh"
-      run: shellcheck --severity=style {staged_files}
+      run: shellcheck --external-sources --severity=style {staged_files}
 pre-push:
   parallel: true
   jobs:
@@ -16,4 +16,4 @@ pre-push:
       run: yamllint {all_files}
     - name: shellcheck
       glob: "*.sh"
-      run: shellcheck --severity=style {all_files}
+      run: shellcheck --external-sources --severity=style {all_files}
