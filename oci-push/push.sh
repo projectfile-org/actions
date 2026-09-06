@@ -78,6 +78,8 @@ fi
 # for every cascade tag — same content), read once after the loop.
 authfile="$(mktemp)"
 digestfile="$(mktemp)"
+# Handed to the in-job cosign step, so it OUTLIVES this script the way the digest file does.
+signer_dir="${M6E_REGISTRY_CONFIG_DIR:-.ci-secrets/registry}"
 # Derived .tar files this run decompressed, so cleanup never deletes a DOWNLOADED
 # artifact — only what we made from it.
 derived=()
@@ -106,7 +108,7 @@ oci_archive() {                              # $1 artifact stem → sets ${archi
 # One authfile holds every server, so each destination logs in once, up front.
 # shellcheck source-path=SCRIPTDIR source=../oci/auth.sh
 source "${GITHUB_ACTION_PATH}/../oci/auth.sh"
-oci_login "${authfile}"
+oci_login "${authfile}" "${signer_dir}"
 
 # The FIRST destination is the primary: it carries the verify pass and the digest
 # the signer reads. Declaration order is the route's order, so the project decides

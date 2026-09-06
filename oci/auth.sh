@@ -14,6 +14,10 @@
 # A failed login aborts before any copy or push: half a fan-out is worse than none.
 # SOURCED, not executed — the authfile is the CALLER's (its EXIT trap wipes it, so the
 # credential never outlives the job), and a failure `return 1`s into the caller's `set -e`.
+#
+# The same credentials are ALSO written, in Docker-config shape, to the signer config dir
+# the caller names — the in-job cosign step runs in a container with no login of its own,
+# and reads them through DOCKER_CONFIG the way it reads the digest through image.digest.
 
 _oci_cred() {                                # $1 sink, $2 USERNAME|PASSWORD → value
   local _sink="$1" _kind="$2" _name
@@ -39,11 +43,20 @@ _oci_login_server() {                        # $1 repo ref → server
   esac
 }
 
+# go-containerregistry (cosign, crane) looks Docker Hub up under a key of its own, so the
+# `docker.io` skopeo writes resolves to no credential at all and the signer reads as anonymous.
+_oci_signer_key() {                          # $1 server → the key the signer looks it up under
+  case "$1" in
+    docker.io) printf 'https://index.docker.io/v1/' ;;
+    *) printf '%s' "$1" ;;
+  esac
+}
+
 # sink_names/sink_repos are the caller's, populated by oci/sinks.sh before this is
 # sourced — the arrays cross a file boundary shellcheck cannot follow.
 # shellcheck disable=SC2154
-oci_login() {                                # $1 authfile → log in to every sink_repos[]
-  local _authfile="$1" _i _sink _server _user _pass
+oci_login() {                                # $1 authfile, $2 signer config dir → log in to every sink_repos[]
+  local _authfile="$1" _signer_dir="${2:-}" _i _sink _server _user _pass _auths=""
   # mktemp leaves a ZERO-BYTE file; skopeo login READS the authfile (to merge the new
   # entry) before writing, and empty is not valid JSON. Seed an empty Docker-config
   # object so that read parses.
@@ -60,5 +73,12 @@ oci_login() {                                # $1 authfile → log in to every s
     echo "${OCI_ACTION} logging in sink=${_sink:-<default>} server=${_server} user=${_user}"
     printf '%s' "${_pass}" | skopeo login --authfile "${_authfile}"               \
       --username "${_user}" --password-stdin "${_server}"
+    _auths="${_auths:+${_auths},}\"$(_oci_signer_key "${_server}")\":{\"auth\":\"$(printf '%s:%s' "${_user}" "${_pass}" | base64 --wrap 0)\"}"
   done
+  [ -n "${_signer_dir}" ] || return 0
+  mkdir -p "${_signer_dir}"
+  : > "${_signer_dir}/config.json"
+  chmod 600 "${_signer_dir}/config.json"
+  printf '{"auths":{%s}}\n' "${_auths}" > "${_signer_dir}/config.json"
+  echo "${OCI_ACTION} signer config ${_signer_dir}/config.json servers=${#sink_repos[@]}"
 }
