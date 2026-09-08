@@ -18,8 +18,9 @@
 # non-semver -> exact only). No build here — the image was built once upstream;
 # this is the pure publish hand-off.
 #
-# With PREVIEW set the ref is a branch, not a tag: the cascade collapses to the single
-# `latest-<branch>` tag and only the PRIMARY destination receives it. A release moves
+# With PREVIEW set the ref is a branch, not a tag: the cascade collapses to one mutable
+# tag (`edge` on a trunk branch, else `latest-<branch>`) and only the PRIMARY destination
+# receives it. A release moves
 # `latest` and every semver head for every sink the route declares; a preview moves
 # nothing a consumer floats on, and stays on the one registry the project controls.
 #

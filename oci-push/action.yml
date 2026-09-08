@@ -64,11 +64,23 @@ inputs:
     # The BRANCH name when this run is a preview — a push to a branch that is not the
     # project default (pf-ci gates the publish node on the `preview` event token and
     # threads the ref name here; empty on a tag). It OVERRIDES `version` in tags.sh: the
-    # cascade collapses to the single `latest-<branch>` tag, so `latest` and every semver
+    # cascade collapses to ONE mutable tag — `edge` on a `primary` branch below, else
+    # `latest-<branch>` — so `latest` and every semver
     # head keep pointing at the last release. It also narrows the destinations to the
     # primary sink, because most registries cannot delete a tag and a preview that reached
     # a public mirror would stay in its tag list forever.
     description: Branch name when this run is a preview (empty => a release, full cascade).
+    required: false
+    default: ""
+  primary:
+    # The project's trunk branch names, space-separated, threaded by pf-ci from the
+    # document (repositories[role=origin].branch). It splits `preview` above into its two
+    # cases: a trunk push earns the FIXED `edge` tag — one name a compose file can point
+    # at across every merge, which is what makes a build testable in production without
+    # burning a version — and any other branch keeps `latest-<branch>`. EMPTY leaves
+    # every branch a preview, so an older workflow reaching this action degrades to the
+    # tag it always published rather than mislabelling one `edge`.
+    description: Trunk branch names, space-separated (empty => every branch is a preview).
     required: false
     default: ""
   registry:
@@ -136,6 +148,7 @@ runs:
         IMAGE: ${{ inputs.image }}
         VERSION: ${{ inputs.version }}
         PREVIEW: ${{ inputs.preview }}
+        PRIMARY: ${{ inputs.primary }}
         REGISTRY: ${{ inputs.registry }}
         REFS: ${{ inputs.refs }}
         SINK: ${{ inputs.sink }}

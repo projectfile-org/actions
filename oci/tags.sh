@@ -11,8 +11,8 @@
 # (v1.2.3 == 1.2.3). EMPTY VERSION (not a tag build — defensive: publish is gated
 # tag-only) degrades to the single load-tag push.
 #
-# A PREVIEW build — a push to a branch that is not the project's primary one — takes
-# precedence over every arm below and publishes exactly ONE tag, `latest-<branch>`.
+# A BRANCH build takes precedence over every arm below and publishes ONE mutable tag:
+# `edge` on the trunk (a PRIMARY name), `latest-<branch>` on any other branch.
 # Load-bearing for the multi-arch publish too: EVERY tag of the cascade must end up the
 # same kind of object, so a `latest` left a plain image while `1.2.3` is a manifest list
 # would be invisible to every consumer until one pulled on a foreign architecture.
@@ -20,7 +20,15 @@
 
 ver="${VERSION#v}"
 tags=()
+on_trunk=N
 if [ -n "${PREVIEW:-}" ]; then
+  case " ${PRIMARY:-} " in                   # padded both sides: a whole name, never a prefix
+    *" ${PREVIEW} "*) on_trunk=Y ;;
+  esac
+fi
+if [ "${on_trunk}" = Y ]; then
+  tags=(edge)                                # fixed, so it survives the trunk being renamed
+elif [ -n "${PREVIEW:-}" ]; then
   # Checked BEFORE the semver arm because a BRANCH may be named like a version
   # (`1.27.0`, `release-2`): taking the cascade there would move `latest` and every
   # release head to an unreviewed branch build. The `latest-` prefix is structural, not
@@ -48,4 +56,4 @@ else
   tags=("${ver}")                            # pre-release / non-semver: exact only
 fi
 
-echo "${OCI_ACTION} version=${VERSION:-<none>} preview=${PREVIEW:-<none>} cascade=[${tags[*]}]"
+echo "${OCI_ACTION} version=${VERSION:-<none>} preview=${PREVIEW:-<none>} trunk=${on_trunk} cascade=[${tags[*]}]"
