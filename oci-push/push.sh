@@ -20,9 +20,9 @@
 #
 # With PREVIEW set the ref is a branch, not a tag: the cascade collapses to one mutable
 # tag (`edge` on a trunk branch, else `latest-<branch>`) and only the PRIMARY destination
-# receives it. A release moves
-# `latest` and every semver head for every sink the route declares; a preview moves
-# nothing a consumer floats on, and stays on the one registry the project controls.
+# receives it. A release moves `latest` and every semver head for every sink the route
+# declares; a branch build moves nothing a consumer floats on, and stays on the one
+# registry the project controls.
 #
 # With ARCHIVES set the cell holds one tar per DECLARED architecture and the same
 # cascade is published as MANIFEST LISTS instead: buildah assembles the index locally
