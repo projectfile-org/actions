@@ -5,9 +5,9 @@
 #
 # What we are doing: turn the `platform` input (the M6E_ARCH axis value pf-ci
 # mints from org.projectfile.architecture) into the backend's --platform flag, and
-# refuse a foreign arch this kernel cannot emulate BEFORE the build starts — a missing
-# binfmt handler otherwise surfaces as an exec-format error deep inside a RUN step,
-# naming nothing. SHARED by both container-build backends (buildx and buildah take the
+# make sure this kernel can emulate that arch BEFORE the build starts, registering the
+# handler when it is missing — an absent binfmt handler otherwise surfaces as an
+# exec-format error deep inside a RUN step, naming nothing. SHARED by both container-build backends (buildx and buildah take the
 # same flag spelling) so the realisation lives in one place. SOURCED, not executed: it
 # populates the caller's `platform_args` array, so the caller owns `set -euo pipefail`
 # and a `return 1` here aborts the caller through it.
@@ -25,6 +25,30 @@ _qemu_arch() {                               # $1 oci arch → qemu arch
     386)   printf 'i386' ;;
     *)     printf '%s' "$1" ;;               # arm, riscv64, ppc64le, s390x already match
   esac
+}
+
+# Register the handler a foreign arch needs. Empty BINFMT_IMAGE => gate only, never mutate.
+_binfmt_register() {                         # $1 oci arch, $2 qemu arch
+  local _arch="$1" _qemu="$2" _attempt _delay=2
+  if [ -z "${BINFMT_IMAGE:-}" ]; then
+    echo "${BACKEND} platform: registration disabled arch=${_arch} — binfmt-image input is empty" >&2
+    return 1
+  fi
+  if ! command -v docker >/dev/null 2>&1; then
+    echo "${BACKEND} platform: cannot register arch=${_arch} — no docker to run ${BINFMT_IMAGE} with" >&2
+    return 1
+  fi
+  for _attempt in 1 2 3; do                  # a registry pull, so it retries with backoff
+    echo "${BACKEND} platform: registering qemu-${_qemu} arch=${_arch} attempt=${_attempt} image=${BINFMT_IMAGE}"
+    if docker run --privileged --rm "${BINFMT_IMAGE}" --install "${_arch}" >&2; then
+      break
+    fi
+    echo "${BACKEND} platform: registration failed arch=${_arch} attempt=${_attempt} backoff=${_delay}s" >&2
+    sleep "${_delay}"
+    _delay=$((_delay * 2))
+  done
+  # The registration is what counts, not the exit status — re-probe rather than trust it.
+  [ -f "/proc/sys/fs/binfmt_misc/qemu-${_qemu}" ]
 }
 
 platform_args=()
@@ -52,9 +76,12 @@ if [ -n "${PLATFORM:-}" ]; then
     if [ ! -e /proc/sys/fs/binfmt_misc/status ]; then
       echo "${BACKEND} platform: unverifiable arch=${_arch} handler=qemu-${_qemu} host=${_host} — binfmt_misc is not mounted in this namespace, trusting the host registration"
     elif [ ! -f "/proc/sys/fs/binfmt_misc/qemu-${_qemu}" ]; then
-      echo "${BACKEND} platform: MISSING qemu binfmt arch=${_arch} handler=qemu-${_qemu} host=${_host}" >&2
-      echo "  install with: docker run --privileged --rm tonistiigi/binfmt --install all" >&2
-      return 1
+      if ! _binfmt_register "${_arch}" "${_qemu}"; then
+        echo "${BACKEND} platform: MISSING qemu binfmt arch=${_arch} handler=qemu-${_qemu} host=${_host}" >&2
+        echo "  install with: docker run --privileged --rm ${BINFMT_IMAGE:-tonistiigi/binfmt} --install all" >&2
+        return 1
+      fi
+      echo "${BACKEND} platform: registered qemu-${_qemu} arch=${_arch} host=${_host}"
     else
       echo "${BACKEND} platform: emulated arch=${_arch} handler=qemu-${_qemu} host=${_host}"
     fi

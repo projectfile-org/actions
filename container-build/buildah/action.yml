@@ -84,6 +84,11 @@ inputs:
     description: Target architecture for this cell (empty => native build, no flag).
     required: false
     default: ""
+  binfmt-image:
+    # Pinned by digest (tag qemu-v9.2.2-52): the registration outlives the step that made it.
+    description: Image that registers a missing QEMU handler (empty => gate only, never register).
+    required: false
+    default: "docker.io/tonistiigi/binfmt@sha256:1b804311fe87047a4c96d38b4b3ef6f62fca8cd125265917a9e3dc3c996c39e6"
 runs:
   using: composite
   steps:
@@ -98,6 +103,7 @@ runs:
         PF_CLI_IMAGE: ${{ inputs.pf-cli-image }}
         M6E_BUILD_TARGET: ${{ inputs.target }}
         PLATFORM: ${{ inputs.platform }}
+        BINFMT_IMAGE: ${{ inputs.binfmt-image }}
         # Artifact compression + buildah layer-cache toggles. Forwarded verbatim from
         # the job env (set there via a workflow ci.env entry or the runner’s ambient
         # env); build.sh applies the defaults (none/true) when absent — uncompressed tar
