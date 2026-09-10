@@ -88,7 +88,7 @@ inputs:
     # only spends registry rate-limit budget) and leaves it EMPTY for a mutable dev↔latest
     # tag, so run.sh keeps its secure `always` default and never runs a stale freshly-pushed
     # image. An instance overrides globally via the RUN_TOOL_PULL env on the runner.
-    description: Image pull policy (always|missing|never); empty keeps run.sh's always default.
+    description: Image pull policy (always|missing|never); empty keeps run.sh’s memoed always default.
     required: false
     default: ""
   advisory:

@@ -181,6 +181,32 @@ echo "run-tool prefer-local=${prefer_local} entrypoint=${entrypoint} :: ${prefer
 # secure-default switch (AGENTS: expose behaviour) — set it to `missing`/`never` for an
 # offline or local run (e.g. act against images already in the host store).
 pull="${RUN_TOOL_PULL:-always}"
+memo_dir="${XDG_CACHE_HOME:-${HOME}/.cache}/run-tool/pull"                   # refs this runner has already re-checked
+memo_file="${memo_dir}/${ref//[^A-Za-z0-9._-]/_}"                            # one file per ref bounds the directory by the tool set
+memo_run="${GITHUB_RUN_ID:-}"                                                # the scope a memo is valid in
+memo_ttl="${RUN_TOOL_PULL_TTL:-0}"                                           # seconds a memo ALSO survives across runs
+case "${memo_ttl}" in '' | *[!0-9]*) memo_ttl=0 ;; esac                      # a non-numeric TTL degrades to run-local, never to an error
+memo_write=no                                                                # only a MISS on an enabled, run-scoped memo records one
+if [ "${pull}" != always ]; then
+  memo_why="not applicable (pull=${pull})"
+elif [ "${RUN_TOOL_PULL_MEMO:-on}" = off ]; then
+  memo_why="disabled (RUN_TOOL_PULL_MEMO=off)"
+elif [ -z "${memo_run}" ]; then
+  memo_why="unscoped (no GITHUB_RUN_ID)"
+elif [ ! -r "${memo_file}" ]; then
+  memo_write=yes
+  memo_why="miss (no memo for this ref)"
+elif [ "$(<"${memo_file}")" = "${memo_run}" ]; then
+  pull=missing                                                               # this run already re-checked the registry for this ref
+  memo_why="hit (run ${memo_run})"
+elif [ "${memo_ttl}" -gt 0 ] && memo_age="$(stat --format=%Y "${memo_file}" 2>/dev/null)" && [ "$(($(date +%s) - memo_age))" -lt "${memo_ttl}" ]; then
+  pull=missing                                                               # a previous run re-checked it inside the TTL window
+  memo_why="hit (younger than ${memo_ttl}s)"
+else
+  memo_write=yes
+  memo_why="miss (older than ${memo_ttl}s)"
+fi
+echo "run-tool pull-memo ref=${ref} pull=${pull} ttl=${memo_ttl}s :: ${memo_why}"
 # Build the container command: wrap in `sh -c` when RUN contains shell metacharacters
 # (&&, ||, |, ;, $(...), backtick, redirects) OR double-quotes. Distroless images
 # (e.g. hadolint/hadolint, FROM scratch) have no sh at all — passing `sh -c` as the
@@ -233,6 +259,20 @@ if [ "${prefer_local}" = yes ]; then
   # what the container path emulates with its by-NAME forwarding.
   env "${env_pairs[@]}" "${cmd[@]}" || rc=$?
 else
+  if [ "${pull}" = always ]; then
+    quiet_opts=(--quiet)                                                     # the pull-memo line already names the ref, so the per-blob wall adds nothing
+    [ "${verbosity}" != debug ] || quiet_opts=()                             # debug asks for the copy trace back
+    if docker pull "${quiet_opts[@]}" "${ref}"; then
+      pull=missing                                                           # the run reuses exactly what this pull fetched
+      if [ "${memo_write}" = yes ]; then
+        # Write beside the memo then rename — atomic, no lock; an unwritable cache degrades to a per-step pull, never to a failed step.
+        { mkdir --parents "${memo_dir}" && printf '%s' "${memo_run}" > "${memo_file}.$$" && mv --force "${memo_file}.$$" "${memo_file}"; } || memo_write=failed
+      fi
+      echo "run-tool pulled ref=${ref} memo-write=${memo_write}"
+    else
+      echo "run-tool pull failed ref=${ref} :: leaving --pull always to the run" >&2
+    fi
+  fi
   docker run --rm --pull "${pull}" --volume "${PWD}":/app/ws --workdir /app/ws                     \
     "${user_opts[@]}" "${net_opts[@]}" "${mount_opts[@]}" "${env_opts[@]}" "${ref}" "${cmd[@]}" || rc=$?
 fi

@@ -171,6 +171,30 @@ in a bounded retry+exponential-backoff loop (`M6E_OCI_RETRIES` /
 so a registry that accepts the connection and then stops answering fails instead
 of hanging the release.
 
+## `run-tool`: one registry round trip per run, not per step
+
+Tool images ride mutable tags, so `run-tool` re-checks the registry on every
+step (`--pull always`). That never re-downloads a layer — an unchanged digest
+moves about half a megabyte — but it does cost a manifest round trip per step,
+and a job runs dozens of tool steps over a handful of images.
+
+`run-tool` therefore memos each ref it pulls under
+`$XDG_CACHE_HOME/run-tool/pull`, keyed by the workflow run. The first step to
+name an image pulls it and records the run id; every later step in the same run
+reuses the warm store. Freshness across runs is unchanged — a new run id is
+always a miss, so a freshly pushed tool image is picked up by the next run. A
+memo cannot be scoped without a run id, so an invocation with no `GITHUB_RUN_ID`
+(a local shell) re-checks every time.
+
+The pull is also quiet, so the per-blob copy wall no longer buries the log: one
+`run-tool pull-memo …` line names the ref and the decision instead.
+
+| Runner env | Default | Effect |
+|---|---|---|
+| `RUN_TOOL_PULL_MEMO` | `on` | `off` restores a registry re-check on every step |
+| `RUN_TOOL_PULL_TTL` | `0` | Seconds a memo also stays valid ACROSS runs; `0` keeps it run-local |
+| `B19_VERBOSITY` | `warn` | `debug` restores the per-blob copy trace |
+
 ## Multi-arch: many archives, one index, no extra tags (`archives:`)
 
 A project declaring `org.projectfile.architecture` builds ONE cell per
