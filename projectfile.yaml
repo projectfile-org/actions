@@ -3,8 +3,6 @@
 #
 # SPDX-License-Identifier: MIT
 $schema: https://projectfile.org/schema/v1.json
-copyright:
-  year: 2026
 identity:
   created: "2026-06-04"
   name: actions
@@ -18,15 +16,21 @@ identity:
     en: The external provider action library for pf-ci. Each provider name maps to one composite action, pinned and consumed as <owner>/actions/<provider>@v1 — the owner being this library’s mirror on whichever forge the workflow runs on; the resolver keeps the dispatch while this library owns the native CI recipe for each target (Ports and Adapters).
     es: La biblioteca de acciones de proveedores externos para pf-ci. Cada nombre de proveedor se corresponde con una acción compuesta, fijada y consumida como <owner>/actions/<provider>@v1 — donde el propietario es la réplica de esta biblioteca en la forja donde se ejecuta el flujo de trabajo; el resolver conserva el despacho mientras esta biblioteca posee la receta de CI nativa para cada objetivo (Ports and Adapters).
     uk: Бібліотека дій зовнішніх провайдерів для pf-ci. Кожне імʼя провайдера відповідає одній композитній дії, зафіксованій і використовуваній як <owner>/actions/<provider>@v1 — де власник це дзеркало цієї бібліотеки на тій кузні, де виконується робочий процес; резолвер тримає диспетчеризацію, а ця бібліотека володіє рідною CI-рецептою для кожної цілі (Ports and Adapters).
+  version: 1.0.0
 includes:
   - https://kiota.ch/damian-buho/metadata/raw/branch/main/include.yaml
   - https://kiota.ch/projectfile/metadata/raw/branch/main/include.yaml
+keywords:
+  - actions
+  - projectfile
+  - pf-ci
+  - github-actions
+  - composite-action
+  - provider
 kind: SoftwareSourceCode
-repositories:
-  - branch: main
-    role: origin
-    type: git
-    url: ssh://git@kiota.ch/projectfile/actions.git
+license:
+  covers: project
+  spdx: ""
 links:
   - label:
       en: projectfile/actions on kiota.ch
@@ -35,19 +39,35 @@ links:
     preferred: true
     type: source-code
     url: https://kiota.ch/projectfile/actions
-keywords:
-  - actions
-  - projectfile
-  - pf-ci
-  - github-actions
-  - composite-action
-  - provider
-technologies:
-  - docker
-license:
-  covers: project
-  spdx: "MIT"
+  - label:
+      en: projectfile/actions on GitHub
+      es: projectfile/actions en GitHub
+      uk: projectfile/actions на GitHub
+    tags:
+      - public
+      - badges
+      - badges-github
+    type: source-code
+    url: https://github.com/projectfile-org/actions
+  - label:
+      en: Issues on GitHub
+      es: Incidencias en GitHub
+      uk: Задачі на GitHub
+    tags:
+      - support
+    type: bugs
+    url: https://github.com/projectfile-org/actions/issues
 org:
   projectfile:
     release:
       tag-prefix: v
+repositories:
+  - branch: main
+    role: origin
+    type: git
+    url: ssh://git@kiota.ch/projectfile/actions.git
+  - role: mirror
+    type: git
+    url: git@github.com:projectfile-org/actions.git
+technologies:
+  - docker
