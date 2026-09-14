@@ -74,7 +74,8 @@ if [ "${M6E_BUILDX_HEAL:-Y}" != "N" ]; then
         load_out="$(docker load --input "${ARTIFACT_NAME}.tar")"
         heal_ref="$(printf '%s\n' "${load_out}" | sed -n 's/^Loaded image: //p; s/^Loaded image ID: //p' | tail -1)"
         echo "buildx heal image=${heal_ref} home=${heal_home} uid=${heal_uid} :: re-asserting posture"
-        docker buildx build --tag "${heal_ref}" --load - <<HEAL
+        # plain `docker build`, not buildx: the caller may have an isolated docker-container builder active, which cannot see this daemon-loaded image
+        docker build --tag "${heal_ref}" - <<HEAL
 FROM ${heal_ref}
 USER root
 RUN find '${heal_home}' -xdev -type d ! \( -uid ${heal_uid} -gid 0 \) -exec chown ${heal_uid}:0 {} + ; \
