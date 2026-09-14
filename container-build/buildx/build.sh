@@ -62,3 +62,26 @@ echo "buildx building artifact=${ARTIFACT_NAME} image=${IMAGE:-<anonymous>} cont
 # for 0). Stripped here, buildx stamps the real build time — reproducibility
 # (clamping layer timestamps) is intentionally not applied on this plane.
 env -u SOURCE_DATE_EPOCH docker buildx build "${std_args[@]}" "${platform_args[@]+"${platform_args[@]}"}" "${build_args[@]}" "${build_contexts[@]}" "${label_args[@]+"${label_args[@]}"}" "${target_args[@]+"${target_args[@]}"}" --output "${docker_output}" "${CONTEXT}"
+
+# Heal the archived image's ${B19_HOME} posture: BuildKit's differ can drop it under a cache mount, the bug container-build/buildah already heals. M6E_BUILDX_HEAL=N opts out.
+if [ "${M6E_BUILDX_HEAL:-Y}" != "N" ]; then
+    manifest_json="$(tar --extract --to-stdout --file "${ARTIFACT_NAME}.tar" manifest.json)"
+    config_path="$(printf '%s' "${manifest_json}" | jq -r '.[0].Config')"
+    config_json="$(tar --extract --to-stdout --file "${ARTIFACT_NAME}.tar" "${config_path}")"
+    heal_home="$(printf '%s' "${config_json}" | jq -r '(.config.Env // [])[]' | sed -n 's/^B19_HOME=//p')"
+    heal_uid="$(printf '%s' "${config_json}" | jq -r '(.config.Env // [])[]' | sed -n 's/^B19_UID=//p')"
+    if [ -n "${heal_home}" ] && [ -n "${heal_uid}" ]; then
+        load_out="$(docker load --input "${ARTIFACT_NAME}.tar")"
+        heal_ref="$(printf '%s\n' "${load_out}" | sed -n 's/^Loaded image: //p; s/^Loaded image ID: //p' | tail -1)"
+        echo "buildx heal image=${heal_ref} home=${heal_home} uid=${heal_uid} :: re-asserting posture"
+        docker buildx build --tag "${heal_ref}" --load - <<HEAL
+FROM ${heal_ref}
+USER root
+RUN find '${heal_home}' -xdev -type d ! \( -uid ${heal_uid} -gid 0 \) -exec chown ${heal_uid}:0 {} + ; \
+    find '${heal_home}' -xdev -type d ! -perm -g=rwx -exec chmod g+rwX {} +
+USER ${heal_uid}
+HEAL
+        docker save --output "${ARTIFACT_NAME}.tar" "${heal_ref}"
+        docker rmi "${heal_ref}" >/dev/null 2>&1 || true
+    fi
+fi
