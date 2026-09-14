@@ -31,14 +31,13 @@ kind: SoftwareSourceCode
 license:
   covers: project
   spdx: ""
+org:
+  projectfile:
+    release:
+      tag-prefix: v
+technologies:
+  - docker
 links:
-  - label:
-      en: projectfile/actions on kiota.ch
-      es: projectfile/actions en kiota.ch
-      uk: projectfile/actions на kiota.ch
-    preferred: true
-    type: source-code
-    url: https://kiota.ch/projectfile/actions
   - label:
       en: projectfile/actions on GitHub
       es: projectfile/actions en GitHub
@@ -57,17 +56,18 @@ links:
       - support
     type: bugs
     url: https://github.com/projectfile-org/actions/issues
-org:
-  projectfile:
-    release:
-      tag-prefix: v
+  - label:
+      en: projectfile/actions on kiota.ch
+      es: projectfile/actions en kiota.ch
+      uk: projectfile/actions на kiota.ch
+    preferred: true
+    type: source-code
+    url: https://kiota.ch/projectfile/actions
 repositories:
+  - role: mirror
+    type: git
+    url: git@github.com:projectfile-org/actions.git
   - branch: main
     role: origin
     type: git
     url: ssh://git@kiota.ch/projectfile/actions.git
-  - role: mirror
-    type: git
-    url: git@github.com:projectfile-org/actions.git
-technologies:
-  - docker
