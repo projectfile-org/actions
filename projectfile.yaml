@@ -31,12 +31,6 @@ kind: SoftwareSourceCode
 license:
   covers: project
   spdx: ""
-org:
-  projectfile:
-    release:
-      tag-prefix: v
-technologies:
-  - docker
 links:
   - label:
       en: projectfile/actions on GitHub
@@ -63,6 +57,10 @@ links:
     preferred: true
     type: source-code
     url: https://kiota.ch/projectfile/actions
+org:
+  projectfile:
+    release:
+      tag-prefix: v
 repositories:
   - role: mirror
     type: git
@@ -71,3 +69,5 @@ repositories:
     role: origin
     type: git
     url: ssh://git@kiota.ch/projectfile/actions.git
+technologies:
+  - docker
