@@ -210,6 +210,11 @@ fi
 # (the tag consumers float on), so aborting here keeps a bad image off it. One
 # verify covers every destination — the same archive is copied to all of them, so a
 # re-encode defect shows on the first.
+# skopeo carries no version contract across runners — probe once, skip the flag where absent.
+_skopeo_force_compress=()
+skopeo copy --help 2>&1 | grep --quiet -- '--dest-force-compress-format' \
+  && _skopeo_force_compress=(--dest-force-compress-format)
+
 verified=
 for _repo in "${sink_repos[@]}"; do
 for t in "${tags[@]}"; do
@@ -223,7 +228,7 @@ for t in "${tags[@]}"; do
   else
     echo "oci-push copying archive=${arch_stems[0]}.tar -> ref=${ref} format=v2s2 compression=gzip"
     oci_retry "copy ref=${ref}" skopeo copy --format v2s2                     \
-      --dest-compress-format gzip --dest-force-compress-format                \
+      --dest-compress-format gzip "${_skopeo_force_compress[@]}"              \
       --dest-authfile "${authfile}" --digestfile "${digestfile}"              \
       "docker-archive:${archive}" "docker://${ref}"
   fi
