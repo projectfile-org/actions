@@ -82,6 +82,11 @@ inputs:
     description: Container network to join (reach the live compose stack by service name).
     required: false
     default: ""
+  platform:
+    # A bare OCI arch (`arm64`) or `os/arch`; run.sh composes `linux/`. Empty => the runner’s own.
+    description: OCI platform to pull and run the image as; empty keeps the runner’s own.
+    required: false
+    default: ""
   pull:
     # docker/podman `--pull` policy (RUN_TOOL_PULL). pf-ci sets `missing` for an
     # IMMUTABLE pinned tag (fetch once, reuse — re-pulling an unmovable digest each run
@@ -117,6 +122,7 @@ runs:
         ENV_VARS: ${{ inputs.env }}
         MOUNTS: ${{ inputs.mounts }}
         NETWORK: ${{ inputs.network }}
+        PLATFORM: ${{ inputs.platform }}
         ADVISORY: ${{ inputs.advisory }}
         # An explicit input WINS; an empty input falls through to the CALLER's ambient
         # RUN_TOOL_PULL (an instance override — act.mk sets one fleet-wide for its offline

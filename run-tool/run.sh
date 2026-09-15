@@ -115,6 +115,12 @@ done
 net_opts=()
 [ -n "${NETWORK:-}" ] && net_opts=(--network "${NETWORK}")
 
+# A bare arch becomes linux/<arch>; empty leaves the runner’s own platform
+platform="${PLATFORM:-}"
+[ -n "${platform}" ] && [ "${platform#*/}" = "${platform}" ] && platform="linux/${platform}"
+platform_opts=()
+[ -n "${platform}" ] && platform_opts=(--platform "${platform}")
+
 # A write into the /app/ws bind must land as the HOST checkout's owner, not the image's baked uid.
 user_opts=()
 case "${RUN_TOOL_USER:-}" in
@@ -171,7 +177,7 @@ else
   done
 fi
 
-echo "run-tool ref=${ref} run=${RUN} env=[${env_names}] mounts=[${MOUNTS:-}] network=[${NETWORK:-}] pull=${RUN_TOOL_PULL:-always} verbosity=${verbosity} user=[${user_id:-image default}] advisory=${ADVISORY:-false}"
+echo "run-tool ref=${ref} run=${RUN} env=[${env_names}] mounts=[${MOUNTS:-}] network=[${NETWORK:-}] pull=${RUN_TOOL_PULL:-always} platform=${platform:-host} verbosity=${verbosity} user=[${user_id:-image default}] advisory=${ADVISORY:-false}"
 echo "run-tool prefer-local=${prefer_local} entrypoint=${entrypoint} :: ${prefer_reason}"
 # --pull always: tool images ride MUTABLE tags (BASE_IMAGE_DEFAULT_VERSION || latest),
 # so a runner that has already cached the tag would otherwise run a STALE image forever —
@@ -182,7 +188,7 @@ echo "run-tool prefer-local=${prefer_local} entrypoint=${entrypoint} :: ${prefer
 # offline or local run (e.g. act against images already in the host store).
 pull="${RUN_TOOL_PULL:-always}"
 memo_dir="${XDG_CACHE_HOME:-${HOME}/.cache}/run-tool/pull"                   # refs this runner has already re-checked
-memo_file="${memo_dir}/${ref//[^A-Za-z0-9._-]/_}"                            # one file per ref bounds the directory by the tool set
+memo_file="${memo_dir}/${ref//[^A-Za-z0-9._-]/_}${platform:+.${platform//\//_}}"   # one file per ref and platform bounds the directory by the tool set
 memo_run="${GITHUB_RUN_ID:-}"                                                # the scope a memo is valid in
 memo_ttl="${RUN_TOOL_PULL_TTL:-0}"                                           # seconds a memo ALSO survives across runs
 case "${memo_ttl}" in '' | *[!0-9]*) memo_ttl=0 ;; esac                      # a non-numeric TTL degrades to run-local, never to an error
@@ -262,7 +268,7 @@ else
   if [ "${pull}" = always ]; then
     quiet_opts=(--quiet)                                                     # the pull-memo line already names the ref, so the per-blob wall adds nothing
     [ "${verbosity}" != debug ] || quiet_opts=()                             # debug asks for the copy trace back
-    if docker pull "${quiet_opts[@]}" "${ref}"; then
+    if docker pull "${quiet_opts[@]}" "${platform_opts[@]}" "${ref}"; then
       pull=missing                                                           # the run reuses exactly what this pull fetched
       if [ "${memo_write}" = yes ]; then
         # Write beside the memo then rename — atomic, no lock; an unwritable cache degrades to a per-step pull, never to a failed step.
@@ -273,7 +279,7 @@ else
       echo "run-tool pull failed ref=${ref} :: leaving --pull always to the run" >&2
     fi
   fi
-  docker run --rm --pull "${pull}" --volume "${PWD}":/app/ws --workdir /app/ws                     \
+  docker run --rm --pull "${pull}" --volume "${PWD}":/app/ws --workdir /app/ws "${platform_opts[@]}" \
     "${user_opts[@]}" "${net_opts[@]}" "${mount_opts[@]}" "${env_opts[@]}" "${ref}" "${cmd[@]}" || rc=$?
 fi
 
