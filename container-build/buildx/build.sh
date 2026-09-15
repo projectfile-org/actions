@@ -29,6 +29,8 @@ source "${GITHUB_ACTION_PATH}/../mounts.sh"
 source "${GITHUB_ACTION_PATH}/../labels.sh"
 # shellcheck source-path=SCRIPTDIR source=../platform.sh
 source "${GITHUB_ACTION_PATH}/../platform.sh"
+# shellcheck source-path=SCRIPTDIR source=../mount-cache.sh
+source "${GITHUB_ACTION_PATH}/../mount-cache.sh"
 
 # Standard m6e build-args (mirror the make-plane buildx-build): frontend pin +
 # bare registry/cache forwards (docker reads env; unset => Dockerfile default) +
@@ -56,12 +58,16 @@ docker_output="type=docker,dest=${ARTIFACT_NAME}.tar"
 if [ -n "${IMAGE:-}" ]; then
     docker_output="type=docker,name=${IMAGE},dest=${ARTIFACT_NAME}.tar"
 fi
+# The dance builds share the real build’s args and contexts, so every mount flag resolves the same
+dance=(docker buildx build "${std_args[@]}" "${platform_args[@]+"${platform_args[@]}"}" "${build_args[@]}" "${build_contexts[@]}")
+mount_cache_dance inject "${dance[@]}"
 echo "buildx building artifact=${ARTIFACT_NAME} image=${IMAGE:-<anonymous>} context=${CONTEXT} binds=${#build_contexts[@]}"
 # env -u SOURCE_DATE_EPOCH: BuildKit consumes the var (env OR build-arg) to stamp
 # the image's `created` field; an inherited value would freeze it (e.g. 1970-01-01
 # for 0). Stripped here, buildx stamps the real build time — reproducibility
 # (clamping layer timestamps) is intentionally not applied on this plane.
 env -u SOURCE_DATE_EPOCH docker buildx build "${std_args[@]}" "${platform_args[@]+"${platform_args[@]}"}" "${build_args[@]}" "${build_contexts[@]}" "${label_args[@]+"${label_args[@]}"}" "${target_args[@]+"${target_args[@]}"}" --output "${docker_output}" "${CONTEXT}"
+mount_cache_dance extract "${dance[@]}"
 
 # Heal the archived image's ${B19_HOME} posture: BuildKit's differ can drop it under a cache mount, the bug container-build/buildah already heals. M6E_BUILDX_HEAL=N opts out.
 if [ "${M6E_BUILDX_HEAL:-Y}" != "N" ]; then

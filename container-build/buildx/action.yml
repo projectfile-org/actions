@@ -87,9 +87,27 @@ inputs:
     description: Image that registers a missing QEMU handler (empty => gate only, never register).
     required: false
     default: "docker.io/tonistiigi/binfmt@sha256:1b804311fe87047a4c96d38b4b3ef6f62fca8cd125265917a9e3dc3c996c39e6"
+  mount-cache-key:
+    # The cell’s stem, trailing `-`: this run saves `<stem><run_id>` and restores the newest `<stem>*`.
+    description: Cache-key stem that persists the Dockerfile’s cache mounts across runs (empty => off).
+    required: false
+    default: ""
+  mount-cache-restore-keys:
+    # Newline-separated stems tried after the cell’s own, so a new cell starts from a sibling’s mounts.
+    description: Fallback cache-key stems restored when the cell has no entry yet.
+    required: false
+    default: ""
 runs:
   using: composite
   steps:
+    - if: inputs.mount-cache-key != ''
+      uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25  # v5
+      with:
+        path: ${{ runner.temp }}/ci-cache/mounts
+        key: ${{ inputs.mount-cache-key }}${{ github.run_id }}
+        restore-keys: |
+          ${{ inputs.mount-cache-key }}
+          ${{ inputs.mount-cache-restore-keys }}
     # NO setup-buildx-action: that spins up an isolated `docker-container` builder
     # that neither shares the daemon's local image store (so private-registry base
     # images present only locally must be re-pulled) nor is wanted on runners using
@@ -109,6 +127,7 @@ runs:
         M6E_BUILD_TARGET: ${{ inputs.target }}
         PLATFORM: ${{ inputs.platform }}
         BINFMT_IMAGE: ${{ inputs.binfmt-image }}
+        MOUNT_CACHE_DIR: ${{ inputs.mount-cache-key != '' && format('{0}/ci-cache/mounts', runner.temp) || '' }}
       run: bash "$GITHUB_ACTION_PATH/build.sh"
     - uses: actions/upload-artifact@v7
       with:
@@ -117,3 +136,16 @@ runs:
         # artifact-name is run_id-scoped (not per-attempt), so a re-run re-uploads under
         # the same name; upload-artifact@v4+ refuses a duplicate without this.
         overwrite: true
+    # A tag run restores but never saves: its entries are scoped to the tag and no later run can read them.
+    - if: inputs.mount-cache-key != '' && github.ref_type == 'branch'
+      uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25  # v5
+      with:
+        path: ${{ runner.temp }}/ci-cache/mounts
+        key: ${{ inputs.mount-cache-key }}${{ github.run_id }}
+    - if: inputs.mount-cache-key != '' && github.ref_type == 'branch'
+      shell: bash
+      env:
+        GH_TOKEN: ${{ github.token }}
+        CACHE_STEM: ${{ inputs.mount-cache-key }}
+        CACHE_KEY: ${{ inputs.mount-cache-key }}${{ github.run_id }}
+      run: bash "$GITHUB_ACTION_PATH/../mount-cache-evict.sh"

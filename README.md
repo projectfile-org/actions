@@ -51,6 +51,8 @@ neutral DAG. Both write `<artifact-name>.tar` as an OCI archive.
 ```
 container-build/
 ├── build-args.sh        shared: newline build-args → --build-arg array (sourced)
+├── mount-cache.{sh,awk} shared: the cache-mount dance (sourced) and its Dockerfile rewrite
+├── mount-cache-evict.sh keeps one mount-cache entry per cell
 ├── buildx/{action.yml, build.sh}    docker buildx backend
 └── buildah/{action.yml, build.sh}   daemonless buildah backend
 ```
@@ -229,3 +231,37 @@ yields a well-formed index over wrong images. After the first push,
 set, and each member’s runtime config must equal the config in its tar. Nothing
 upstream can catch either: every per-arch archive is individually correct and
 verifies clean.
+
+## Cache mounts survive an ephemeral runner (`mount-cache-key:`)
+
+A persistent builder keeps every `RUN --mount=type=cache` between runs — apt
+lists, source downloads, ccache, the language package caches. An ephemeral
+runner throws the builder away with the job, so each run compiles from nothing.
+`container-build/buildx` closes that gap when a caller hands it a
+`mount-cache-key:` stem: it restores the cell’s newest entry with
+`actions/cache/restore`, injects the contents into the builder’s mounts before
+the build, extracts them after, saves under `<stem><run_id>`, and deletes the
+entries that key supersedes so a cell never holds more than one. Extraction
+only follows a successful build, and a tag run restores without saving — its
+entry would be scoped to the tag and no later run could read it.
+
+Nothing about the mounts is declared twice. `mount-cache.awk` rewrites the
+project’s own Dockerfile into a throwaway *dance* Dockerfile: every stage keeps
+its `FROM`, `ARG` and `ENV` lines and each source `RUN` becomes one `RUN` that
+carries the very same `--mount=type=cache,…` flags and tars each target out to
+(or back in from) a file named by the mount’s resolved `id`. BuildKit expands
+those flags against the same base image and build args, so a `target=${B19_DOWNLOAD_PATH}`
+or `id=apt-cache-${B19_UBUNTU_SERIES}-${TARGETARCH}` resolves — ENV inherited from
+the base included — to the identical cache record the real build uses, with
+`sharing`, `uid`, `gid` and `mode` untouched. Ownership rides inside the tars,
+restored by `tar` as root, so a cache a non-root `pip`/`uv` wrote is still theirs
+after a round trip. Only the stages the build target reaches dance, one dance
+per distinct mount flag, and a Dockerfile with no cache mount dances nothing.
+
+The saved size per mount lands in the step summary. Eviction needs the job’s
+token to carry `actions: write`; without it the step warns and leaves GitHub’s
+own oldest-first eviction to bound the repository. `mount-cache-restore-keys:`
+lists further stems (newline-separated) a cell with no entry of its own falls
+back to — pf-ci passes the per-image stem, so a new series or architecture
+starts from a sibling’s downloads instead of cold. The buildah backend runs on
+persistent forge runners and takes neither input.
