@@ -127,6 +127,11 @@ inputs:
     description: Newline-separated `<arch> <artifact-name>` archives to index (empty => single image).
     required: false
     default: ""
+  only-arches:
+    # Comma list of the declared arches THIS scope publishes, threaded from vars.CI_ONLY_M6E_ARCH
+    description: Comma-separated arches to keep from `archives` (empty => every declared arch).
+    required: false
+    default: ""
 outputs:
   digest:
     # The content digest (sha256:…) of what was published, tag-independent (every cascade
@@ -153,4 +158,5 @@ runs:
         REFS: ${{ inputs.refs }}
         SINK: ${{ inputs.sink }}
         ARCHIVES: ${{ inputs.archives }}
+        ONLY_ARCHES: ${{ inputs.only-arches }}
       run: bash "$GITHUB_ACTION_PATH/push.sh"

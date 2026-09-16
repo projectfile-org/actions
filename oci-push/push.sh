@@ -47,9 +47,19 @@ arch_stems=()
 if [ -n "${ARCHIVES:-}" ]; then
   while read -r _arch _stem; do
     [ -n "${_stem}" ] || continue
+    # ONLY_ARCHES keeps a declared arch only when the comma-wrapped list names it whole
+    if [ -n "${ONLY_ARCHES:-}" ] && [[ ",${ONLY_ARCHES}," != *",${_arch},"* ]]; then
+      echo "oci-push withholding arch=${_arch} archive=${_stem} only-arches=[${ONLY_ARCHES}]"
+      continue
+    fi
     arch_names+=("${_arch}")
     arch_stems+=("${_stem}")
   done <<< "${ARCHIVES}"
+  # a list that keeps no declared arch would publish nothing under a green step
+  if [ "${#arch_stems[@]}" -eq 0 ]; then
+    echo "oci-push: only-arches=[${ONLY_ARCHES:-}] keeps none of the declared archives" >&2
+    exit 1
+  fi
 fi
 if [ "${#arch_stems[@]}" -eq 0 ]; then
   : "${ARTIFACT_NAME:?${OCI_ACTION}: artifact-name is required when archives is empty}"
