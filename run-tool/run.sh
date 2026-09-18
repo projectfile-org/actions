@@ -100,7 +100,13 @@ mount_opts=()
 for spec in ${MOUNTS:-}; do
   host="${spec%%:*}"
   case "${host}" in
-    /*|./*|../*) mkdir -p "${host}" ;;
+    /*|./*|../*)
+      if ! mkdir -p "${host}" 2>/dev/null; then
+        near="${host}"
+        while [ ! -e "${near}" ]; do near="$(dirname "${near}")"; done               # nearest ancestor that exists
+        echo "run-tool cannot create mount source ${host} as uid $(id -u): $(ls -ldn "${near}")" >&2
+        exit 1
+      fi ;;
   esac
   mount_opts+=(--volume "${spec}")
 done
