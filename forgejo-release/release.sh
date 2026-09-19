@@ -161,11 +161,13 @@ attach() {
 # already exists). The tag is the title (tea SDK requires non-empty). Create-only
 # passes no --asset: the release is minted empty and the sidecar sweep below fills
 # it, so a 409 there means another cell got in first and there is nothing to redo.
+creator=false
 if [ -n "${asset}" ]; then
 	if timeout "${timeout_s}" tea release create --repo "${repo}"                         \
 	                                             --tag "${VERSION}" --title "${VERSION}" \
 	                                             --asset "${asset}" </dev/null; then
 		log "created release ${VERSION} with ${asset##*/}"
+		creator=true
 	else
 		log "release ${VERSION} exists, attaching ${asset##*/}"
 		attach "${asset}"
@@ -173,6 +175,7 @@ if [ -n "${asset}" ]; then
 elif timeout "${timeout_s}" tea release create --repo "${repo}"                          \
                                                --tag "${VERSION}" --title "${VERSION}" </dev/null; then
 	log "created release ${VERSION} with no primary asset"
+	creator=true
 else
 	log "release ${VERSION} already exists, nothing to create"
 fi
@@ -194,7 +197,9 @@ fi
 # The declared sidecar directory, restored here by the download edge from whichever
 # node built the torrents. Absent => this project collects none, which is every
 # project that never opted into seeding.
-if [ -d "${sidecar_dir}" ]; then
+if [ "${creator}" != "true" ]; then
+	log "not the release creator, skipping ${sidecar_dir}/ sweep to avoid duplicate attachments"  # every cell shares this directory; only one may attach it
+elif [ -d "${sidecar_dir}" ]; then
 	for _sidecar in "${sidecar_dir}"/*; do
 		[ -f "${_sidecar}" ] || continue
 		attach "${_sidecar}"
