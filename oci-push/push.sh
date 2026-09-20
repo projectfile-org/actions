@@ -231,10 +231,12 @@ for t in "${tags[@]}"; do
   ref="${_repo}:${t}"
   if [ -n "${ARCHIVES:-}" ]; then
     echo "oci-push pushing list=${list} -> ref=${ref} arches=[${arch_names[*]}] format=v2s2 compression=gzip"
+    # no --digestfile: buildah writes it EMPTY and exits 0 when the push fails, masking the error
     oci_retry "push ref=${ref}" buildah manifest push --all --format v2s2     \
-      --compression-format gzip                                               \
-      --authfile "${authfile}" --digestfile "${digestfile}"                   \
+      --compression-format gzip --authfile "${authfile}"                      \
       "${list}" "docker://${ref}"
+    # the index digest is the digest of the bytes the registry serves for the tag
+    skopeo inspect --raw --authfile "${authfile}" "docker://${ref}" | skopeo manifest-digest /dev/stdin > "${digestfile}"
   else
     echo "oci-push copying archive=${arch_stems[0]}.tar -> ref=${ref} format=v2s2 compression=gzip"
     oci_retry "copy ref=${ref}" skopeo copy --format v2s2                     \
@@ -293,9 +295,9 @@ done
 # Emit the content digest of what we just published, so a downstream signer/attester
 # targets the immutable ${repo}@sha256:… instead of a mutable tag (cosign MUST sign a
 # digest — a tag could move under the signature). Every cascade tag points at the SAME
-# content, so the digest is tag-independent: skopeo (or buildah, on the multi-arch path,
-# where it is the INDEX digest — what a consumer pulling the tag actually resolves, and
-# a commitment to every member) wrote it to ${digestfile} on each push (same value).
+# content, so the digest is tag-independent: skopeo wrote it to ${digestfile} on each
+# push (same value) — on the multi-arch path it is the INDEX digest read back from the
+# registry, what a consumer pulling the tag actually resolves and a commitment to every member.
 # Threaded THREE honest ways so the consumer plane picks whichever:
 #   * stdout log      — always, for the run transcript;
 #   * $GITHUB_OUTPUT   — the forge step output (`steps.<id>.outputs.digest`, bare
