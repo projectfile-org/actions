@@ -132,6 +132,37 @@ inputs:
     description: Comma-separated arches to keep from `archives` (empty => every declared arch).
     required: false
     default: ""
+  heads:
+    # One `<kind> <template>…` line per org.projectfile.image.heads kind (release, prerelease, trunk, branch)
+    description: Declared head templates per build kind (empty or an omitted kind => the built-in cascade).
+    required: false
+    default: ""
+  variant:
+    # One `<value> <default|->` line per org.projectfile.image.variant part, in declared order
+    description: This cell’s variant part values (empty => the heads alone).
+    required: false
+    default: ""
+  variant-cells:
+    # Every cell of this publish, one line of space-separated part values each
+    description: Every cell’s variant part values, checked for colliding tags (empty => this cell alone).
+    required: false
+    default: ""
+  variant-join:
+    description: Separator between variant part values (empty => none).
+    required: false
+    default: ""
+  variant-aliases:
+    description: "`defaults` also publishes tags with default-valued parts dropped (empty => none)."
+    required: false
+    default: ""
+  variant-tag:
+    description: Tag template over `${head}` and `${variant}`; required with `variant`.
+    required: false
+    default: ""
+  variant-bare:
+    description: Space-separated heads whose tag is the variant alone (empty => none).
+    required: false
+    default: ""
 outputs:
   digest:
     # The content digest (sha256:…) of what was published, tag-independent (every cascade
@@ -159,4 +190,11 @@ runs:
         SINK: ${{ inputs.sink }}
         ARCHIVES: ${{ inputs.archives }}
         ONLY_ARCHES: ${{ inputs.only-arches }}
+        HEADS: ${{ inputs.heads }}
+        VARIANT: ${{ inputs.variant }}
+        VARIANT_CELLS: ${{ inputs.variant-cells }}
+        VARIANT_JOIN: ${{ inputs.variant-join }}
+        VARIANT_ALIASES: ${{ inputs.variant-aliases }}
+        VARIANT_TAG: ${{ inputs.variant-tag }}
+        VARIANT_BARE: ${{ inputs.variant-bare }}
       run: bash "$GITHUB_ACTION_PATH/push.sh"

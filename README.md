@@ -63,7 +63,7 @@ lints it directly); the identical arg-parsing is sourced from `build-args.sh` vi
 
 The registry plane shares the same way. `oci/` holds the pieces the publish is
 assembled from — `sinks.sh` (the destination route), `auth.sh` (the sink-keyed
-credential lookup and login), `tags.sh` (the semver cascade) and `retry.sh` (the
+credential lookup and login), `tags.sh` (the semver cascade and variant tags, tested by `tags.test.sh`) and `retry.sh` (the
 bounded backoff around one registry crossing) — each sourced, never executed, so
 a failure returns into the caller's `set -e`.
 
@@ -136,7 +136,7 @@ stayed behind.
 |-------------------|---------|----------------------------------------------------------|
 | `container-build/buildx`  | landed  | `docker/setup-buildx-action` → OCI-tar → cell artifact |
 | `container-build/buildah` | landed  | buildah build → `oci-archive:` tar → cell artifact     |
-| `oci-push`        | landed  | skopeo copy cell tar → registry (no daemon load); with `archives:`, buildah indexes the per-arch tars into one manifest list per cascade tag; retry+backoff on the crossing |
+| `oci-push`        | landed  | skopeo copy cell tar → registry (no daemon load); with `archives:`, buildah indexes the per-arch tars into one manifest list per cascade tag; with `heads:` and `variant:`, the tags follow the rules the project declares; retry+backoff on the crossing |
 | `image-scan`      | planned | scanner against `oci-archive:<artifact>.tar` (daemonless)|
 | `secrets-provision` | landed | `org.projectfile.ci.secrets` declarations → `.secrets/` tree (value-write / docker-run dispatcher) |
 

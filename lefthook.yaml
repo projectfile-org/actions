@@ -11,6 +11,9 @@ pre-commit:
 pre-push:
   parallel: true
   jobs:
+    - name: tags-test
+      glob: "oci/tags*.sh"
+      run: bash oci/tags.test.sh
     - name: yamllint
       glob: "*.{yml,yaml}"
       run: yamllint {all_files}
