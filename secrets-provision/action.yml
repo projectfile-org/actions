@@ -1,3 +1,4 @@
+---
 # SPDX-FileCopyrightText: 2026 Damián Búho <damian.buho@proton.me>
 #
 # SPDX-License-Identifier: MIT
@@ -28,7 +29,9 @@
 # dispatcher does no ref composition — it only picks WHICH of the two a given
 # declaration uses.
 name: secrets-provision
-description: Materialise the .secrets/ tree from org.projectfile.ci.secrets declarations (value-write or docker-run dispatcher).
+description: >-
+    Materialise the .secrets/ tree from org.projectfile.ci.secrets declarations
+    (value-write or docker-run dispatcher).
 inputs:
   declarations:
     # JSON serialization of the org.projectfile.ci.secrets subtree (the same map

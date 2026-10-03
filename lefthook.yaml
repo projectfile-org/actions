@@ -4,7 +4,7 @@ pre-commit:
   jobs:
     - name: yamllint
       glob: "*.{yml,yaml}"
-      run: yamllint {staged_files}
+      run: yamllint --strict {staged_files}
     - name: shellcheck
       glob: "*.sh"
       run: shellcheck --external-sources --severity=style {staged_files}
@@ -16,7 +16,7 @@ pre-push:
       run: bash oci/tags.test.sh
     - name: yamllint
       glob: "*.{yml,yaml}"
-      run: yamllint {all_files}
+      run: yamllint --strict {all_files}
     - name: shellcheck
       glob: "*.sh"
       run: shellcheck --external-sources --severity=style {all_files}
