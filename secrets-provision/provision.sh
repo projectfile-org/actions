@@ -148,8 +148,10 @@ write_secret() {
     mkdir -p "${abs_file_dir}"
 
     echo "secrets-provision: RUN ${run_image} ${run_cmd} <secret-dir=${file_dir}> env=[${env_names}] -> ${file_path}"
+    # Generators create secrets, so they run with validation off (a self generator cannot satisfy its own B19_REQUIRED_SECRETS yet).
     if [[ "${run_cmd}" == m6e-secret-ed25519-b64 ]]; then
       docker run --rm                                         \
+        --env B19_SECRETS_ENABLED=false                      \
         --volume "${abs_file_dir}:${abs_file_dir}:ro"         \
         "${env_opts[@]}"                                      \
         "${run_image}"                                        \
@@ -157,6 +159,7 @@ write_secret() {
         | tr -d ' \n' | base64 -d >"${file_path}"
     else
       docker run --rm                                         \
+        --env B19_SECRETS_ENABLED=false                      \
         --volume "${abs_file_dir}:${abs_file_dir}:ro"         \
         "${env_opts[@]}"                                      \
         "${run_image}"                                        \
