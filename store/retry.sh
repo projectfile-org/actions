@@ -20,7 +20,7 @@
 # A cache-hit image ID reaped before buildah opens it falls back to name parsing, which rejects a 64-hex ID.
 STORE_RACE='layer not known|image not known|identifier is not an image|layer for blob .*not found|getting source imageReference for "[0-9a-f]{64}"'
 # GNU tee where installed: the uutils one panics on a short tee(2) under pipe-page exhaustion.
-STORE_TEE="$(command -v gnutee)" || STORE_TEE=tee
+STORE_TEE="$(command -v gnutee)" || STORE_TEE="tee"
 
 # The command is piped to tee, so it runs in a SUBSHELL: a retried callback hands its
 # result back through the filesystem (buildah's --iidfile, the image store), never
