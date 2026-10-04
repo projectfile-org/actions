@@ -79,8 +79,11 @@ resolve_image() {
 }
 
 # Write one secret: resolve its kind (value vs docker), run the generator, and
-# capture stdout into the file (no trailing newline — bcrypt/htpasswd compare
-# byte-for-byte, so a trailing newline corrupts the value).
+# capture stdout into the file. Single-line values (passwords, hashes) strip
+# newlines; m6e-secret-ed25519-b64 emits base64 the dispatcher decodes.
+# Recipes opt into EITHER encoding: -b64 (base64 on stdout, decoded here) for
+# multiline payloads a bare capture cannot carry, or the default single-line
+# form (trailing newline stripped — byte-exact for bcrypt/htpasswd compares).
 write_secret() {
   local name="$1"
   # File path: dots -> slashes; every other char (incl. underscore) is literal.
@@ -145,12 +148,21 @@ write_secret() {
     mkdir -p "${abs_file_dir}"
 
     echo "secrets-provision: RUN ${run_image} ${run_cmd} <secret-dir=${file_dir}> env=[${env_names}] -> ${file_path}"
-    docker run --rm                                         \
-      --volume "${abs_file_dir}:${abs_file_dir}:ro"         \
-      "${env_opts[@]}"                                      \
-      "${run_image}"                                        \
-      sh -c "${run_cmd} \"\${1}\"" _ "${abs_file_dir}"      \
-      | tr -d '\n' >"${file_path}"
+    if [[ "${run_cmd}" == m6e-secret-ed25519-b64 ]]; then
+      docker run --rm                                         \
+        --volume "${abs_file_dir}:${abs_file_dir}:ro"         \
+        "${env_opts[@]}"                                      \
+        "${run_image}"                                        \
+        sh -c "${run_cmd} \"\${1}\"" _ "${abs_file_dir}"      \
+        | tr -d ' \n' | base64 -d >"${file_path}"
+    else
+      docker run --rm                                         \
+        --volume "${abs_file_dir}:${abs_file_dir}:ro"         \
+        "${env_opts[@]}"                                      \
+        "${run_image}"                                        \
+        sh -c "${run_cmd} \"\${1}\"" _ "${abs_file_dir}"      \
+        | tr -d '\n' >"${file_path}"
+    fi
     echo "secrets-provision: WROTE ${file_path} (docker)"
     return 0
   fi
@@ -166,7 +178,7 @@ write_secret() {
 is_deriving() {
   local run_cmd="$1"
   case "${run_cmd}" in
-    m6e-secret-bcrypt | m6e-secret-bcrypt-b64 | m6e-secret-htpasswd) return 0 ;;
+    m6e-secret-bcrypt | m6e-secret-bcrypt-b64 | m6e-secret-htpasswd | derive-*) return 0 ;;
     *) return 1 ;;
   esac
 }
