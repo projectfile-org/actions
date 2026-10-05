@@ -207,6 +207,29 @@ if [ -n "${ARCHIVES:-}" ]; then
     exit 1
   fi
   echo "oci-push assembled list=${list} arches=[${_have}] members=${#arch_stems[@]}"
+
+  # v2s2 index (no annotations field) unless the index carries the member's OCI labels
+  _index_format=(--format v2s2)
+  if [ "${M6E_INDEX_ANNOTATIONS:-Y}" = "N" ]; then
+    echo "oci-push index annotations disabled M6E_INDEX_ANNOTATIONS=N — index=v2s2"
+  else
+    _annotate=()
+    while IFS= read -r _line; do
+      [ -n "${_line}" ] || continue
+      # one --annotation per org.opencontainers.image.* label of the first member
+      _annotate+=(--annotation "${_line}")
+      echo "oci-push index annotation key=${_line%%=*} member=${arch_names[0]}"
+    done < <(_published_config "docker-archive:${arch_archives[0]}" |
+      jq --raw-output '(.Labels // {}) | to_entries[] | select(.key | startswith("org.opencontainers.image.")) | "\(.key)=\(.value)"')
+    if [ "${#_annotate[@]}" -gt 0 ]; then
+      buildah manifest annotate --index "${_annotate[@]}" "${list}" > /dev/null
+      # no --format: members stay docker v2s2 (Healthcheck), the index becomes OCI
+      _index_format=()
+      echo "oci-push index annotated list=${list} annotations=$(( ${#_annotate[@]} / 2 ))"
+    else
+      echo "oci-push no org.opencontainers.image labels on member=${arch_names[0]} — index=v2s2"
+    fi
+  fi
 else
   oci_archive "${arch_stems[0]}"             # the single image this cell publishes
 fi
@@ -230,9 +253,9 @@ for _repo in "${sink_repos[@]}"; do
 for t in "${tags[@]}"; do
   ref="${_repo}:${t}"
   if [ -n "${ARCHIVES:-}" ]; then
-    echo "oci-push pushing list=${list} -> ref=${ref} arches=[${arch_names[*]}] format=v2s2 compression=gzip"
+    echo "oci-push pushing list=${list} -> ref=${ref} arches=[${arch_names[*]}] index-format=${_index_format[1]:-oci} members=v2s2 compression=gzip"
     # no --digestfile: buildah writes it EMPTY and exits 0 when the push fails, masking the error
-    oci_retry "push ref=${ref}" buildah manifest push --all --format v2s2     \
+    oci_retry "push ref=${ref}" buildah manifest push --all "${_index_format[@]}" \
       --compression-format gzip --authfile "${authfile}"                      \
       "${list}" "docker://${ref}"
     # the index digest is the digest of the bytes the registry serves for the tag
