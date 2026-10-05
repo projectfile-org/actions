@@ -216,8 +216,8 @@ if [ -n "${ARCHIVES:-}" ]; then
     _annotate=()
     while IFS= read -r _line; do
       [ -n "${_line}" ] || continue
-      # one --annotation per org.opencontainers.image.* label of the first member
-      _annotate+=(--annotation "${_line}")
+      # one --annotation per label, CSV-quoted whole (inner " doubled): buildah manifest --annotation splits on commas, killing values that hold one.
+      _annotate+=(--annotation "\"${_line//\"/\"\"}\"")
       echo "oci-push index annotation key=${_line%%=*} member=${arch_names[0]}"
     done < <(_published_config "docker-archive:${arch_archives[0]}" |
       jq --raw-output '(.Labels // {}) | to_entries[] | select(.key | startswith("org.opencontainers.image.")) | "\(.key)=\(.value)"')
