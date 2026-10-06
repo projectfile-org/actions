@@ -170,7 +170,7 @@ notes=""
 if annotated; then
 	title="$(git tag --list "${VERSION}" --format='%(contents:subject)')"
 	title="${title:-${VERSION}}"
-	notes="$(git tag --list "${VERSION}" --format='%(contents:body)')"
+	notes="$(git tag --list "${VERSION}" --format='%(contents:body)' | sed -E "s|\]\(([^):/#][^):]*)\)|](${server_url%/}/${repo}/src/tag/${VERSION}/\1)|g")"
 	log "release ${VERSION} titled '${title}' with ${#notes} bytes of notes from the tag message"
 else
 	log "tag ${VERSION} carries no message, titling the release with the tag"
