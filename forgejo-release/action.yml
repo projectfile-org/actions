@@ -55,9 +55,9 @@ description: Mint a Forgejo release via tea and attach this cell’s binary, if 
 inputs:
   version:
     # The git tag this release publishes from (pf-ci passes ${{ github.ref_name }};
-    # binaries-released is gated tag-only, so it is always a tag). The tag is BOTH the
-    # release tag and the release title (tea's SDK requires a non-empty title).
-    description: Git tag to create the release at (also the release title).
+    # binaries-released is gated tag-only, so it is always a tag). Its annotated message
+    # titles and describes the release, the bare tag titles it when there is none.
+    description: Git tag to create the release at; its annotated message titles and describes the release.
     required: true
   release-asset-path:
     # The UNSUFFIXED binary path resolved from org.projectfile.artifacts (the single
@@ -108,4 +108,5 @@ runs:
         SERVER_URL: ${{ inputs.server-url }}
         REPO: ${{ inputs.repo }}
         SINK: ${{ inputs.sink }}
+        TAG_TOKEN: ${{ github.token }}
       run: bash "$GITHUB_ACTION_PATH/release.sh"

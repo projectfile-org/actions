@@ -157,14 +157,33 @@ attach() {
 	done
 }
 
+# Title and notes from the annotated tag, refetched with the job token when checkout flattened it to lightweight
+annotated() { [ "$(git cat-file -t "refs/tags/${VERSION}" 2>/dev/null || true)" = tag ]; }
+for attempt in $(seq 1 "${retries}"); do
+	annotated && break
+	log "tag ${VERSION} is not annotated locally, fetching attempt=${attempt}/${retries}"
+	GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=http.extraheader GIT_CONFIG_VALUE_0="AUTHORIZATION: basic $(printf 'x-access-token:%s' "${TAG_TOKEN:-}" | base64 | tr -d '\n')" \
+		timeout "${timeout_s}" git fetch --quiet --force --no-tags origin "+refs/tags/${VERSION}:refs/tags/${VERSION}" </dev/null || sleep "$((backoff * attempt))"
+done
+title="${VERSION}"
+notes=""
+if annotated; then
+	title="$(git tag --list "${VERSION}" --format='%(contents:subject)')"
+	title="${title:-${VERSION}}"
+	notes="$(git tag --list "${VERSION}" --format='%(contents:body)')"
+	log "release ${VERSION} titled '${title}' with ${#notes} bytes of notes from the tag message"
+else
+	log "tag ${VERSION} carries no message, titling the release with the tag"
+fi
+
 # Create wins on the first cell; attach wins on cells 2..N (HTTP 409 — the release
-# already exists). The tag is the title (tea SDK requires non-empty). Create-only
+# already exists). The tag message titles it, else the tag (tea needs a title). Create-only
 # passes no --asset: the release is minted empty and the sidecar sweep below fills
 # it, so a 409 there means another cell got in first and there is nothing to redo.
 creator=false
 if [ -n "${asset}" ]; then
 	if timeout "${timeout_s}" tea release create --repo "${repo}"                         \
-	                                             --tag "${VERSION}" --title "${VERSION}" \
+	                                             --tag "${VERSION}" --title "${title}" --note "${notes}" \
 	                                             --asset "${asset}" </dev/null; then
 		log "created release ${VERSION} with ${asset##*/}"
 		creator=true
@@ -173,7 +192,7 @@ if [ -n "${asset}" ]; then
 		attach "${asset}"
 	fi
 elif timeout "${timeout_s}" tea release create --repo "${repo}"                          \
-                                               --tag "${VERSION}" --title "${VERSION}" </dev/null; then
+                                               --tag "${VERSION}" --title "${title}" --note "${notes}" </dev/null; then
 	log "created release ${VERSION} with no primary asset"
 	creator=true
 else
