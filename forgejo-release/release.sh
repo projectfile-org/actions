@@ -88,22 +88,15 @@ log() { printf '[forgejo-release] %s\n' "$*" >&2; }
 # artifact, so an empty value here is a decision and not a missing configuration.
 asset=""
 if [ -n "${RELEASE_PATH:-}" ]; then
-	# WHICH cell this is — the pair that suffixes the asset name. TARGET_OS/TARGET_ARCH
-	# is the language-neutral spelling every toolchain can bind; GOOS/GOARCH remains the
-	# fallback so the Go projects that already name their axes that way need no edit.
-	# Only the binary mode asks for them: a container-only release has no axis to spend.
-	target_os="${TARGET_OS:-${GOOS:-}}"
-	target_arch="${TARGET_ARCH:-${GOARCH:-}}"
-	: "${target_os:?forgejo-release: TARGET_OS (or GOOS) must be set (matrix axis)}"
-	: "${target_arch:?forgejo-release: TARGET_ARCH (or GOARCH) must be set (matrix axis)}"
-	asset="${RELEASE_PATH}-${target_os}-${target_arch}"
+	# The cell's asset, named the way uname prints the platform (TARGET_OS/TARGET_ARCH, else GOOS/GOARCH)
+	asset="$("$(dirname "$0")/asset-name.sh" "${RELEASE_PATH}")"
 	if [ ! -f "${asset}" ]; then
 		log "asset not found at ${asset} — the build→consumer download edge should have restored it"
 		exit 1
 	fi
 	# First output of the step. Without it a cell that dies during step setup and one
 	# that blocks on the first tea call look identical: both print nothing at all.
-	log "cell ${target_os}/${target_arch} releasing ${asset##*/} at ${VERSION} on ${server_url}"
+	log "cell releasing ${asset##*/} at ${VERSION} on ${server_url}"
 else
 	log "create-only: no binary declared, minting release ${VERSION} on ${server_url} for its sidecars"
 fi

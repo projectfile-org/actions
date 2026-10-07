@@ -12,7 +12,7 @@
 # build.
 #
 # The asset is the binary the build-binaries cell produced, found by suffixing the
-# resolved artifact path with the cell axes: <release-asset-path>-<os>-<arch>. The
+# resolved artifact path the way uname prints the cell: <release-asset-path>-linux-x86_64. The
 # pair comes from TARGET_OS/TARGET_ARCH on the job env, falling back to GOOS/GOARCH
 # — the language-neutral names let a Crystal or Zig cell reuse this action verbatim,
 # while a Go project keeps the axis names its build already binds.
