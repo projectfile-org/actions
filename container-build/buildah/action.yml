@@ -120,6 +120,7 @@ runs:
         # which reports as `signal: killed` with no exit status and no owner.
         M6E_BUILDAH_MEMORY: ${{ env.M6E_BUILDAH_MEMORY }}
         M6E_BUILDAH_MEMORY_SWAP: ${{ env.M6E_BUILDAH_MEMORY_SWAP }}
+        M6E_BUILDAH_CPU_SHARE: ${{ env.M6E_BUILDAH_CPU_SHARE }}
       run: bash "$GITHUB_ACTION_PATH/build.sh"
     # @v3 (NOT v7) because buildah is the FORGEJO backend: Forgejo's artifact store
     # speaks the v1 protocol, and upload-artifact@v4+ (`@actions/artifact` v2) refuses a

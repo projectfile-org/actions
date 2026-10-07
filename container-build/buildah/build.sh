@@ -94,6 +94,12 @@ if [ -n "${M6E_BUILDAH_MEMORY:-}" ]; then
   fi
   echo "buildah build memory=${M6E_BUILDAH_MEMORY} swap=${M6E_BUILDAH_MEMORY_SWAP:-<none>} artifact=${ARTIFACT_NAME}"
 fi
+# Per-build CPU share of the runner plane; lands a cpu.max that detect-cpu-count reads.
+if [ "${M6E_BUILDAH_CPU_SHARE:-}" = "true" ] && command -v job-cpu-share >/dev/null; then
+  cpu_quota="$(job-cpu-share $$)" || cpu_quota=""
+  [ -n "${cpu_quota}" ] && mem_args+=(--cpu-period 100000 --cpu-quota "${cpu_quota}")
+  echo "buildah build cpu-quota=${cpu_quota:-<none>} artifact=${ARTIFACT_NAME}"
+fi
 # The log rides the job workspace, NOT $TMPDIR: /tmp is a 64m tmpfs on the runner and
 # a large build would fill it.
 build_log=".buildah-build-${ARTIFACT_NAME}.log"
