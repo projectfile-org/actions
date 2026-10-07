@@ -163,7 +163,8 @@ notes=""
 if annotated; then
 	title="$(git tag --list "${VERSION}" --format='%(contents:subject)')"
 	title="${title:-${VERSION}}"
-	notes="$(git tag --list "${VERSION}" --format='%(contents:body)' | sed -E "s|\]\(([^):/#][^):]*)\)|](${server_url%/}/${repo}/src/tag/${VERSION}/\1)|g")"
+	# A re-signed tag keeps its earlier signature in the body, so cut from the first armor line on
+	notes="$(git tag --list "${VERSION}" --format='%(contents:body)' | sed -E -e '/^-----BEGIN [A-Z ]*SIGNATURE-----$/,$d' -e "s|\]\(([^):/#][^):]*)\)|](${server_url%/}/${repo}/src/tag/${VERSION}/\1)|g")"
 	log "release ${VERSION} titled '${title}' with ${#notes} bytes of notes from the tag message"
 else
 	log "tag ${VERSION} carries no message, titling the release with the tag"
