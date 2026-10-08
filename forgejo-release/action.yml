@@ -3,80 +3,26 @@
 #
 # SPDX-License-Identifier: MIT
 #
-# forgejo-release — mint a Forgejo release and attach what a cell produced. pf-ci
-# keeps only "which action + ordering" (the neutral DAG); the recipe lives HERE,
-# pinned in workflows as `<owner>/actions/forgejo-release@v1`. It is the
-# CONSUMER end of the same build→artifact hand-off the image scans use: pf-ci
-# emits a download-artifact step that restores the producer's `dist/` tree to the
-# workspace BEFORE this action runs, so the action only logs in and attaches — no
-# build.
-#
-# The asset is the binary the build-binaries cell produced, found by suffixing the
-# resolved artifact path the way uname prints the cell: <release-asset-path>-linux-x86_64. The
-# pair comes from TARGET_OS/TARGET_ARCH on the job env, falling back to GOOS/GOARCH
-# — the language-neutral names let a Crystal or Zig cell reuse this action verbatim,
-# while a Go project keeps the axis names its build already binds.
-#
-# `release-asset-path` UNSET is create-only: a project that ships no binary at all
-# mints its release anyway, so a container-only image release is addressable the
-# same way a binary one is and its magnet has somewhere to be published. pf-ci omits
-# the input entirely when the project declares no kind=binary artifact, so the two
-# modes are told apart by an unset input rather than by a blank string.
-#
-# Create-then-attach idempotency: `tea release create` errors HTTP 409 if a release
-# for the tag already exists (the 2nd..Nth matrix cell, a re-run, or a manual
-# pre-create). The first cell creates; later cells fall back to
-# `tea release assets create` — the subcommand is `assets` (aliases `asset`, `a`);
-# tea has no `attachment` verb, and urfave/cli answers an unknown one by falling
-# through to the parent `releases` action instead of reporting it. The fallback
-# clobbers a same-named attachment first, because Forgejo accepts duplicates. The
-# tag is the release title (tea's SDK requires a non-empty title — the historical
-# `tea release create --tag`-only call failed with "title is empty").
-#
-# Sidecars: a `.torrent`, a `.magnet` and a `.asc` sitting beside the resolved asset
-# are attached to the same release when present. They are located by suffixing the
-# path this action already resolved, so no new input is needed and a project that
-# opted into neither BitTorrent seeding nor signing is unaffected — an absent file is
-# skipped. The `.asc` is a detached armored GPG signature over the asset itself, so a
-# downloader verifies the binary without asking the forge or a registry for anything.
-# A create-only cell has no path to suffix, so every file in `torrents/`
-# (RELEASE_SIDECAR_DIR on the job env) is attached as well — the directory the
-# image half declares as its CI artifact and the download edge restores here.
-#
-# Auth is NOT an input: the leaf declares `env: [FORGEJO_TOKEN]` and pf-ci's
-# per-target credentials overlay binds that NAME to a secret ref on THIS job. A
-# composite action's bash sees the job's OS env (it cannot read the `secrets`
-# context), so release.sh reads the token from the env directly — the env NAME is
-# what scopes the secret to the release job. A cell naming a `sink` reads the
-# DERIVED name (<SINK>_TOKEN) instead, so two destinations never share one secret.
-# `server-url` / `repo` default to the ambient Forgejo Actions context.
+# forgejo-release — mint a tag’s Forgejo release once and attach every asset and sidecar the job restored.
 name: forgejo-release
-description: Mint a Forgejo release via tea and attach this cell’s binary, if any, with its sidecars.
+description: Mint a Forgejo release via tea and attach every platform’s binary, if any, with its sidecars.
 inputs:
   version:
     # The git tag this release publishes from (pf-ci passes ${{ github.ref_name }};
-    # binaries-released is gated tag-only, so it is always a tag). Its annotated message
+    # the release node is gated tag-only, so it is always a tag). Its annotated message
     # titles and describes the release, the bare tag titles it when there is none.
     description: Git tag to create the release at; its annotated message titles and describes the release.
     required: true
   release-asset-path:
-    # The UNSUFFIXED binary path resolved from org.projectfile.artifacts (the single
-    # kind=binary entry, e.g. dist/pf-cli). The action suffixes it per cell:
-    # <path>-<os>-<arch> (TARGET_OS/TARGET_ARCH from the matrix env, GOOS/GOARCH as
-    # the fallback). The build→consumer download edge restored the producer's dist/
-    # tree to the workspace already.
-    #
-    # Empty => CREATE-ONLY: the release is minted with no primary asset and no cell
-    # axes are read. That is a container-only project, whose release exists to carry
-    # the image's .torrent and .magnet from the sidecar directory.
+    # The unsuffixed kind=binary artifact path, e.g. dist/pf-cli; empty mints an image-only release.
     description: >-
-      Unsuffixed binary path; the cell axes are appended to locate the asset, and
-      any .torrent/.magnet/.asc beside it rides along. Empty mints the release with
-      no binary attached.
+      Unsuffixed binary path; every file matching <path>-* is attached, which
+      covers each platform’s binary and its .torrent/.magnet/.asc. Empty mints
+      the release with no binary attached.
     required: false
     default: ""
   server-url:
-    # WHERE this cell releases. Empty => the ambient Forgejo Actions context
+    # WHERE this job releases. Empty => the ambient Forgejo Actions context
     # (GITHUB_SERVER_URL), which is every project releasing only to the forge it runs
     # on. Set => a foreign forge, which is what a Codeberg release needs: Codeberg
     # grants no build minutes, so its release is pushed from kiota's pipeline.

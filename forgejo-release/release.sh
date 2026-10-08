@@ -3,53 +3,18 @@
 #
 # SPDX-License-Identifier: MIT
 #
-# What we are trying to do: mint the Forgejo release tagged $VERSION and attach
-# what this cell produced. Create wins on the first matrix cell; the 2nd..Nth cell
-# (or a re-run) hits HTTP 409 "there is already a release for this tag" and falls
-# back to `tea release assets create` — so a matrix converges on ONE release
-# carrying every cell's assets.
-#
-# TWO modes, chosen by whether RELEASE_PATH is set:
-#
-#   BINARY     RELEASE_PATH names the unsuffixed artifact path. The binary was
-#              produced by the build-binaries cell and restored to the workspace by
-#              pf-ci's download-artifact step (the build→consumer hand-off); we
-#              locate it by suffixing that path with the cell axes.
-#   CREATE-ONLY  RELEASE_PATH is empty, which is a project that ships no binary at
-#              all — a container-only image project. It mints the release with no
-#              primary asset, and needs no TARGET_OS/TARGET_ARCH: it has no cell
-#              axes to suffix with. The release exists so the image's magnet has
-#              somewhere to be published, which is what makes an image release
-#              addressable the same way a binary one is.
-#
-# Sidecars ride along in both modes, and are found two ways because the two modes
-# name their files differently:
-#
-#   beside the asset   a .torrent and .magnet written next to the binary by the
-#                      torrent pipeline, and a .asc written by the signing step,
-#                      found by SUFFIXING the path this action already resolved — so
-#                      nothing here has to know how the seed folder spells its flat,
-#                      fleet-unique name (a torrent file's own name is not the name
-#                      inside its info dict). Each is independent: a project may sign
-#                      without seeding, seed without signing, or do both.
-#   in torrents/       every file in the sidecar directory. Create-only has no asset
-#                      path to suffix, so the image half collects its pair into a
-#                      directory it declares as its CI artifact instead; the download
-#                      edge restores that directory here.
-#
-# Absent files are simply not attached, so a project that never opted into seeding
-# sees no change at all.
-#
+# Mint the Forgejo release tagged $VERSION once and attach every PATH-* asset and swept sidecar.
+
 # Tunables, all optional:
 #   RELEASE_TIMEOUT      seconds per tea call (default 120)
-#   RELEASE_RETRIES      attach attempts before the cell fails (default 3)
+#   RELEASE_RETRIES      attach attempts before the job fails (default 3)
 #   RELEASE_BACKOFF      base seconds for the exponential backoff (default 2)
-#   RELEASE_SIDECAR_DIR  directory swept for extra assets (default torrents)
+#   RELEASE_SIDECAR_DIR  directories swept for extra assets (default "torrents dist/torrents")
 set -euo pipefail
 
 : "${VERSION:?forgejo-release: VERSION (the git tag) is required}"
 
-# WHERE this cell releases. The ambient Forgejo Actions context is the default, so
+# WHERE this job releases. The ambient Forgejo Actions context is the default, so
 # a project releasing only to the forge it runs on binds nothing. SERVER_URL/REPO
 # override it, which is what lets a kiota pipeline attach the same binaries to a
 # Codeberg release: Codeberg grants no build minutes, so nothing can run there.
@@ -80,26 +45,34 @@ fi
 timeout_s="${RELEASE_TIMEOUT:-120}"
 retries="${RELEASE_RETRIES:-3}"
 backoff="${RELEASE_BACKOFF:-2}"
-sidecar_dir="${RELEASE_SIDECAR_DIR:-torrents}"
+sidecar_dirs="${RELEASE_SIDECAR_DIR:-torrents dist/torrents}"
 log() { printf '[forgejo-release] %s\n' "$*" >&2; }
 
-# Which mode, and the asset it names. An UNSET release-asset-path is create-only —
-# the template omits the input entirely for a project declaring no kind=binary
-# artifact, so an empty value here is a decision and not a missing configuration.
-asset=""
+# Every platform's binary and its .asc/.torrent/.magnet; unset RELEASE_PATH is an image-only release.
+assets=()
 if [ -n "${RELEASE_PATH:-}" ]; then
-	# The cell's asset, named the way uname prints the platform (TARGET_OS/TARGET_ARCH, else GOOS/GOARCH)
-	asset="$("$(dirname "$0")/asset-name.sh" "${RELEASE_PATH}")"
-	if [ ! -f "${asset}" ]; then
-		log "asset not found at ${asset} — the build→consumer download edge should have restored it"
+	for _asset in "${RELEASE_PATH}"-*; do
+		if [ -f "${_asset}" ]; then assets+=("${_asset}"); fi
+	done
+	if [ "${#assets[@]}" -eq 0 ]; then
+		log "no asset matches ${RELEASE_PATH}-* — the build→consumer download edge should have restored them"
 		exit 1
 	fi
-	# First output of the step. Without it a cell that dies during step setup and one
-	# that blocks on the first tea call look identical: both print nothing at all.
-	log "cell releasing ${asset##*/} at ${VERSION} on ${server_url}"
+	log "releasing ${#assets[@]} assets matching ${RELEASE_PATH##*/}-* at ${VERSION} on ${server_url}"
 else
 	log "create-only: no binary declared, minting release ${VERSION} on ${server_url} for its sidecars"
 fi
+# shellcheck disable=SC2086 # a space-separated directory list
+for _dir in ${sidecar_dirs}; do
+	if [ ! -d "${_dir}" ]; then
+		log "no ${_dir}/ directory, no collected sidecars there"
+		continue
+	fi
+	for _sidecar in "${_dir}"/*; do
+		if [ -f "${_sidecar}" ]; then assets+=("${_sidecar}"); fi
+	done
+	log "swept ${_dir}/, ${#assets[@]} assets queued"
+done
 
 # Isolate tea's config to a per-job tmpdir (tea resolves it via XDG_CONFIG_HOME).
 # The host-mode runner persists ~/.config/tea/config.yml across jobs, so a bare
@@ -170,53 +143,15 @@ else
 	log "tag ${VERSION} carries no message, titling the release with the tag"
 fi
 
-# Create wins on the first cell; attach wins on cells 2..N (HTTP 409 — the release
-# already exists). The tag message titles it, else the tag (tea needs a title). Create-only
-# passes no --asset: the release is minted empty and the sidecar sweep below fills
-# it, so a 409 there means another cell got in first and there is nothing to redo.
-creator=false
-if [ -n "${asset}" ]; then
-	if timeout "${timeout_s}" tea release create --repo "${repo}"                         \
-	                                             --tag "${VERSION}" --title "${title}" --note "${notes}" \
-	                                             --asset "${asset}" </dev/null; then
-		log "created release ${VERSION} with ${asset##*/}"
-		creator=true
-	else
-		log "release ${VERSION} exists, attaching ${asset##*/}"
-		attach "${asset}"
-	fi
-elif timeout "${timeout_s}" tea release create --repo "${repo}"                          \
-                                               --tag "${VERSION}" --title "${title}" --note "${notes}" </dev/null; then
-	log "created release ${VERSION} with no primary asset"
-	creator=true
+# Created empty, titled by the tag message; a 409 means a re-run already made it.
+if timeout "${timeout_s}" tea release create --repo "${repo}"                          \
+                                            --tag "${VERSION}" --title "${title}" --note "${notes}" </dev/null; then
+	log "created release ${VERSION}"
 else
-	log "release ${VERSION} already exists, nothing to create"
+	log "release ${VERSION} already exists, attaching to it"
 fi
 
-# Each sidecar goes through the same clobbering attach, and each is independent:
-# one failing does not cost the release the binary that already landed. Two
-# sources, because the two modes name their files differently — see the header.
-if [ -n "${asset}" ]; then
-	for _suffix in .torrent .magnet .asc; do
-		_sidecar="${asset}${_suffix}"
-		if [ -f "${_sidecar}" ]; then
-			attach "${_sidecar}"
-		else
-			log "no ${_suffix} beside ${asset##*/}, nothing to attach"
-		fi
-	done
-fi
-
-# The declared sidecar directory, restored here by the download edge from whichever
-# node built the torrents. Absent => this project collects none, which is every
-# project that never opted into seeding.
-if [ "${creator}" != "true" ]; then
-	log "not the release creator, skipping ${sidecar_dir}/ sweep to avoid duplicate attachments"  # every cell shares this directory; only one may attach it
-elif [ -d "${sidecar_dir}" ]; then
-	for _sidecar in "${sidecar_dir}"/*; do
-		[ -f "${_sidecar}" ] || continue
-		attach "${_sidecar}"
-	done
-else
-	log "no ${sidecar_dir}/ directory, no collected sidecars to attach"
-fi
+# Each attach clobbers its namesake, so a re-run converges on the same release.
+for _asset in "${assets[@]}"; do
+	attach "${_asset}"
+done

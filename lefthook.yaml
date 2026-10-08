@@ -14,9 +14,9 @@ pre-push:
     - name: tags-test
       glob: "oci/tags*.sh"
       run: bash oci/tags.test.sh
-    - name: asset-name-test
-      glob: "forgejo-release/asset-name*.sh"
-      run: bash forgejo-release/asset-name.test.sh
+    - name: release-test
+      glob: "forgejo-release/release*.sh"
+      run: bash forgejo-release/release.test.sh
     - name: yamllint
       glob: "*.{yml,yaml}"
       run: yamllint --strict {all_files}
