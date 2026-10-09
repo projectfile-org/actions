@@ -73,7 +73,8 @@ case "${B19_VERBOSITY:-}" in
   debug) verbosity="${B19_VERBOSITY}" ;;
   *)     verbosity=info ;;
 esac
-env_opts=(--env "B19_VERBOSITY=${verbosity}")
+# Trust the bind whatever uid the container runs as, so git reads .gitignore under a root job (act)
+env_opts=(--env "B19_VERBOSITY=${verbosity}" --env GIT_CONFIG_COUNT=1 --env GIT_CONFIG_KEY_0=safe.directory --env GIT_CONFIG_VALUE_0=/app/ws)
 env_pairs=("B19_VERBOSITY=${verbosity}")
 env_names=""
 while IFS= read -r pair; do
