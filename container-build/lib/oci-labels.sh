@@ -190,7 +190,7 @@ _pf() {
 
 _lang="${M6E_LABEL_LANG:-}"
 if [ -z "${_lang}" ]; then
-    _lang="$(_pf get --path-file "${_pf_path}"                          \
+    _lang="$(_pf get --file "${_pf_path}"                               \
         --default en 'org.projectfile.i18n.default-language')"
 fi
 _lang="${_lang:-en}"
@@ -202,7 +202,7 @@ _lbl_log "label language=${_lang} for ${_pf_path}"
 # ${B19_DOCKER_REGISTRY}) are unset in the caller's environment.
 
 OCI_LABEL_TITLE="" OCI_LABEL_DESCRIPTION="" OCI_LABEL_LICENSES="" OCI_LABEL_SOURCE=""
-_pf_batch="$(_pf get --path-file "${_pf_path}" --batch --format sh      \
+_pf_batch="$(_pf get --file "${_pf_path}" --batch --format sh           \
     --lang "${_lang}"                                                   \
     --path OCI_LABEL_TITLE=identity.title                               \
     --path OCI_LABEL_DESCRIPTION=identity.summary                       \
@@ -224,9 +224,9 @@ _lbl_emit "org.opencontainers.image.source"      "${OCI_LABEL_SOURCE}"
 # in the document break the expanded parse, retry plain so user labels still
 # land (their ${VAR} refs then stay literal — degraded, logged, non-fatal).
 
-_ext_labels="$(_pf get --path-file "${_pf_path}" --expand-env 'ext.m6e.build.labels{}')"
+_ext_labels="$(_pf get --file "${_pf_path}" --expand-env 'ext.m6e.build.labels{}')"
 if [ -z "${_ext_labels}" ]; then
-    _ext_labels="$(_pf get --path-file "${_pf_path}" 'ext.m6e.build.labels{}')"
+    _ext_labels="$(_pf get --file "${_pf_path}" 'ext.m6e.build.labels{}')"
     if [ -n "${_ext_labels}" ]; then
         _lbl_log "expand-env parse failed for ${_pf_path} — user labels unexpanded"
     fi
