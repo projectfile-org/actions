@@ -17,7 +17,7 @@ check() {
   errfile="$(mktemp)"
   got="$(
     export OCI_ACTION=tags-test VERSION="" PREVIEW="" PRIMARY="" IMAGE="" HEADS="" VARIANT=""
-    export VARIANT_JOIN="" VARIANT_ALIASES="" VARIANT_TAG="" VARIANT_BARE="" VARIANT_CELLS=""
+    export VARIANT_JOIN="" VARIANT_ALIASES="" VARIANT_TAG="" VARIANT_BARE="" VARIANT_CELLS="" PUBLISHED="" PUBLISHED_STATE=""
     for kv in "$@"; do export "${kv?}"; done
     tags=()
     # shellcheck source-path=SCRIPTDIR source=tags.sh
@@ -97,6 +97,17 @@ check reject-branch-like-version 'reject:reserved-head' PREVIEW=1.27.0 PRIMARY=d
 check reject-branch-latest 'reject:reserved-head' PREVIEW=latest PRIMARY=dev "${branch_heads[@]}"
 check reject-branch-local 'reject:reserved-head' PREVIEW=local-nomada PRIMARY=dev "${branch_heads[@]}"
 check reject-branch-is-variant 'reject:branch-is-variant' PREVIEW=foo-noble PRIMARY=dev "${branch_heads[@]}" VARIANT='resolute resolute' VARIANT_CELLS="${ubuntu}"
+
+# floating heads move only for the highest stable version in their range
+check highest/newest '1.2.0 1.2 1 latest' VERSION=1.2.0 PUBLISHED_STATE=ok PUBLISHED='1.1.5 1.1 1 latest'
+check highest/backport-minor '1.1.6 1.1' VERSION=1.1.6 PUBLISHED_STATE=ok PUBLISHED='1.2.0 1.1.5'
+check highest/backport-major '0.9.1 0.9 0' VERSION=0.9.1 PUBLISHED_STATE=ok PUBLISHED='1.2.0 0.9.0'
+check highest/listing-failed '1.2.0' VERSION=1.2.0 PUBLISHED_STATE=failed
+check highest/rc-ignored '1.2.0 1.2 1 latest' VERSION=1.2.0 PUBLISHED_STATE=ok PUBLISHED='1.3.0-rc.1 1.3.0-rc.1-noble 1.1.0'
+check highest/prefix-not-range '1.5.0 1.5 1' VERSION=1.5.0 PUBLISHED_STATE=ok PUBLISHED='11.0.0 2.1.0'
+check highest/variant '0.20.1-resolute 0.20-resolute 0.20.1 0.20' VERSION=0.20.1 PUBLISHED_STATE=ok \
+  PUBLISHED='0.21.0 0.21.0-noble 0.20.0-noble' "${rules[@]}" VARIANT='resolute resolute' VARIANT_CELLS="${ubuntu}"
+check highest/replay '0.20.0' VERSION=0.20.0 PUBLISHED_STATE=ok PUBLISHED='0.20.0 0.20.1'
 
 # no rules at all: the cascade every existing workflow publishes
 check trunk-edge 'edge' PREVIEW=main PRIMARY=main

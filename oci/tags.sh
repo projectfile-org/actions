@@ -80,6 +80,34 @@ while read -r _kind _templates; do
   echo "${OCI_ACTION} heads kind=${kind} templates=[${_templates}] heads=[${tags[*]}]"
 done <<< "${HEADS:-}"
 
+# A floating release head moves only when this version is the highest stable one in its range
+if [ "${kind}" = release ] && [ -n "${PUBLISHED_STATE:-}" ]; then
+  mapfile -t _stable < <(tr --squeeze-repeats ' ' '\n' <<< "${PUBLISHED:-}" | sed --quiet --regexp-extended 's/^v?([0-9]+\.[0-9]+\.[0-9]+)(-[^r].*|-r[^c].*|)$/\1/p')
+  _held=()
+  _kept=()
+  for _t in "${tags[@]}"; do
+    case "${_t}" in
+      "${ver}") _kept+=("${_t}"); continue ;;
+      "${major}.${minor}") _range="${major}.${minor}." ;;
+      "${major}") _range="${major}." ;;
+      *) _range="" ;;
+    esac
+    _top="${ver}"
+    for _v in "${_stable[@]}"; do
+      [[ "${_v}" == "${_range}"* ]] || continue
+      _top="$(printf '%s\n' "${_top}" "${_v}" | sort --version-sort | tail --lines=1)"
+    done
+    if [ "${PUBLISHED_STATE}" = ok ] && [ "${_top}" = "${ver}" ]; then
+      _kept+=("${_t}")
+    else
+      _held+=("${_t}")
+    fi
+    echo "${OCI_ACTION} head=${_t} range=[${_range:-all}] highest=${_top} listing=${PUBLISHED_STATE}"
+  done
+  [ "${#_held[@]}" -eq 0 ] || echo "${OCI_ACTION} held back heads=[${_held[*]}] version=${ver} published=${#_stable[@]} listing=${PUBLISHED_STATE}"
+  tags=("${_kept[@]}")
+fi
+
 # A branch head never takes a release, latest or local spelling
 if [ "${kind}" = trunk ] || [ "${kind}" = branch ]; then
   for _t in "${tags[@]}"; do

@@ -126,6 +126,38 @@ oci_login "${authfile}" "${signer_dir}"
 # which registry that is.
 image_repo="${sink_repos[0]}"
 
+# Bounded registry crossings: the copies and the tag listing retry, login and verify stay single-shot
+# shellcheck source-path=SCRIPTDIR source=../oci/retry.sh
+source "${GITHUB_ACTION_PATH}/../oci/retry.sh"
+
+# Lists the primary repo's tags; a repository the registry does not know yet has none
+_oci_list_tags() {
+  local _err _rc=0
+  _err="$(mktemp)"
+  skopeo list-tags --authfile "${authfile}" "docker://${image_repo}" 2> "${_err}" || _rc=$?
+  if [ "${_rc}" -ne 0 ] && grep --quiet --ignore-case 'name_unknown\|name unknown\|name not known' "${_err}"; then
+    echo "${OCI_ACTION} repo=${image_repo} not known to the registry yet — no published tags" >&2
+    echo '{"Tags":[]}'
+    _rc=0
+  fi
+  [ "${_rc}" -eq 0 ] || cat "${_err}" >&2
+  rm -f "${_err}"
+  return "${_rc}"
+}
+
+# Published tags on a stable release, so tags.sh moves a floating head only for the highest version
+PUBLISHED_STATE=""
+PUBLISHED=""
+if [ -z "${PREVIEW:-}" ] && [[ "${VERSION#v}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+  if _listing="$(oci_retry "list-tags repo=${image_repo}" _oci_list_tags)"; then
+    PUBLISHED="$(jq --raw-output '.Tags // [] | join(" ")' <<< "${_listing}")"
+    PUBLISHED_STATE=ok
+  else
+    PUBLISHED_STATE=failed
+  fi
+  echo "oci-push listing repo=${image_repo} state=${PUBLISHED_STATE} tags=$(wc --words <<< "${PUBLISHED}")"
+fi
+
 # The semver tag cascade (tags[]): every tag the release publishes, and — on the
 # multi-arch path — every tag that must end up a manifest list, `latest` included,
 # because that is the tag every child image FROMs.
@@ -168,11 +200,6 @@ _published_config() {                       # $@ → skopeo transport + flags
   skopeo inspect --config --raw "$@" | jq --sort-keys '.config'
 }
 
-# Bounded registry copy: the publish is a network/process crossing, so a registry blip
-# must not abort a whole release. ONLY the copy retries; login and verify stay
-# single-shot.
-# shellcheck source-path=SCRIPTDIR source=../oci/retry.sh
-source "${GITHUB_ACTION_PATH}/../oci/retry.sh"
 
 # MULTI-ARCH: assemble the index ONCE, then upload it to every destination. Assembly is
 # local work that does not depend on where the result goes, so a per-destination rebuild
