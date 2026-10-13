@@ -24,7 +24,7 @@ check() {
     if source "${here}/tags.sh" > /dev/null 2> "${errfile}"; then
       printf '%s\n' "${tags[@]}" | sort | paste --serial --delimiters=' ' -
     else
-      echo "reject:$(grep --only-matching --max-count=1 'head-is-variant\|cell-collision\|unknown-cell\|variant-tag' "${errfile}")"
+      echo "reject:$(grep --only-matching --max-count=1 'head-is-variant\|cell-collision\|unknown-cell\|variant-tag\|reserved-head\|branch-is-variant' "${errfile}")"
     fi
   )"
   rm -f "${errfile}"
@@ -87,6 +87,16 @@ check load-tag-fallback 'dev-resolute dev' IMAGE=b19/ubuntu:dev "${rules[@]}" VA
 check undeclared-kind-keeps-cascade 'edge' PREVIEW=main PRIMARY=main HEADS="release \${version}"
 check reject-unknown-cell 'reject:unknown-cell' VERSION=0.1.0 "${rules[@]}" VARIANT='jammy resolute' VARIANT_CELLS="${ubuntu}"
 check reject-missing-tag-template 'reject:variant-tag' VERSION=0.1.0 VARIANT='gnu gnu'
+
+# branch heads: every branch publishes :<branch>, trunk included
+branch_heads=(HEADS=$'release ${version} ${major}.${minor} ${major} latest\nprerelease ${version}\ntrunk ${branch}\nbranch ${branch}' VARIANT_JOIN=- VARIANT_ALIASES=defaults VARIANT_TAG="\${head}-\${variant}" VARIANT_BARE=latest)
+check branch-heads/trunk 'dev-resolute dev' PREVIEW=dev PRIMARY=dev "${branch_heads[@]}" VARIANT='resolute resolute' VARIANT_CELLS="${ubuntu}"
+check branch-heads/release-line 'release-1.2-noble' PREVIEW=release/1.2 PRIMARY=dev "${branch_heads[@]}" VARIANT='noble resolute' VARIANT_CELLS="${ubuntu}"
+check branch-heads/no-variant 'main' PREVIEW=main PRIMARY=dev "${branch_heads[@]}"
+check reject-branch-like-version 'reject:reserved-head' PREVIEW=1.27.0 PRIMARY=dev "${branch_heads[@]}"
+check reject-branch-latest 'reject:reserved-head' PREVIEW=latest PRIMARY=dev "${branch_heads[@]}"
+check reject-branch-local 'reject:reserved-head' PREVIEW=local-nomada PRIMARY=dev "${branch_heads[@]}"
+check reject-branch-is-variant 'reject:branch-is-variant' PREVIEW=foo-noble PRIMARY=dev "${branch_heads[@]}" VARIANT='resolute resolute' VARIANT_CELLS="${ubuntu}"
 
 # no rules at all: the cascade every existing workflow publishes
 check trunk-edge 'edge' PREVIEW=main PRIMARY=main

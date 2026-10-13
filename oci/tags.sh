@@ -21,6 +21,9 @@
 ver="${VERSION#v}"
 tags=()
 on_trunk=N
+# Branch slug for every branch build, trunk included: OCI tag bytes only, clamped inside the 128-char limit
+preview_slug=""
+[ -z "${PREVIEW:-}" ] || preview_slug="$(printf '%s' "${PREVIEW}" | tr --complement 'a-zA-Z0-9._-' '-' | cut --characters=1-110)"
 if [ -n "${PREVIEW:-}" ]; then
   case " ${PRIMARY:-} " in                   # padded both sides: a whole name, never a prefix
     *" ${PREVIEW} "*) on_trunk=Y ;;
@@ -41,7 +44,6 @@ elif [ -n "${PREVIEW:-}" ]; then
   # feature/x, and worse), so every other byte flattens to `-` — the same rule the make
   # plane's M6E_GIT_BRANCH_SANITIZED applies. Clamped well inside the 128-char tag limit,
   # which the `latest-` prefix already eats into.
-  preview_slug="$(printf '%s' "${PREVIEW}" | tr --complement 'a-zA-Z0-9._-' '-' | cut --characters=1-110)"
   tags=("latest-${preview_slug}")
   kind=branch
 elif [ -z "${VERSION:-}" ]; then
@@ -77,6 +79,16 @@ while read -r _kind _templates; do
   done
   echo "${OCI_ACTION} heads kind=${kind} templates=[${_templates}] heads=[${tags[*]}]"
 done <<< "${HEADS:-}"
+
+# A branch head never takes a release, latest or local spelling
+if [ "${kind}" = trunk ] || [ "${kind}" = branch ]; then
+  for _t in "${tags[@]}"; do
+    if [[ "${_t}" =~ ^v?[0-9]+(\.[0-9]+){0,2}$ ]] || [ "${_t}" = latest ] || [ "${_t}" = local ] || [[ "${_t}" == local-* ]]; then
+      echo "${OCI_ACTION}: reserved-head head=${_t} of branch=${PREVIEW} is spelled like a release or local tag" >&2
+      return 1
+    fi
+  done
+fi
 
 # VARIANT: one `<value> <default|->` line per variant part, in declared order
 [ -n "${VARIANT:-}" ] || return 0
@@ -136,6 +148,13 @@ tags=()
 for _c in "${cells[@]}"; do
   read -r -a _cv <<< "${_c}"
   mapfile -t _vars < <(_oci_variants "${_cv[@]}")
+  for _v in "${_cv[@]}" "${_vars[@]}"; do
+    # a branch slug ending in -<variant> reads as another branch’s variant tag
+    if [ -n "${preview_slug}" ] && [ -n "${_v}" ] && [[ "${preview_slug}" == *"-${_v}" ]]; then
+      echo "${OCI_ACTION}: branch-is-variant branch=${PREVIEW} ends in variant=${_v} of cell=[${_c}]" >&2
+      return 1
+    fi
+  done
   for _v in "${_vars[@]}"; do
     for _h in "${heads[@]}"; do
       # a head moves with the next build, so a variant spelled like one would move with it
