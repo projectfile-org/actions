@@ -36,6 +36,8 @@ export LISTING_TAG=ok
 check "external command" 0 true
 check "bare function is not an executable" 127 _listing_fn
 check "function through bash -c" 0 bash -c _listing_fn
+check "bash by name with no PATH" 127 env PATH=/nonexistent bash -c _listing_fn
+check "bash by absolute path with no PATH" 0 env PATH=/nonexistent "${BASH}" -c _listing_fn
 
 echo "retry-test: ${passed} passed, ${failed} failed"
 [ "${failed}" -eq 0 ]
