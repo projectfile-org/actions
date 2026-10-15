@@ -149,7 +149,9 @@ _oci_list_tags() {
 PUBLISHED_STATE=""
 PUBLISHED=""
 if [ -z "${PREVIEW:-}" ] && [[ "${VERSION#v}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-  if _listing="$(oci_retry "list-tags repo=${image_repo}" _oci_list_tags)"; then
+  export authfile image_repo OCI_ACTION      # timeout runs a program, so the function reaches it through bash -c
+  export -f _oci_list_tags
+  if _listing="$(oci_retry "list-tags repo=${image_repo}" bash -c _oci_list_tags)"; then
     PUBLISHED="$(jq --raw-output '.Tags // [] | join(" ")' <<< "${_listing}")"
     PUBLISHED_STATE=ok
   else
