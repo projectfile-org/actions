@@ -143,8 +143,13 @@ else
 	log "tag ${VERSION} carries no message, titling the release with the tag"
 fi
 
+# Release target is the stable branch when declared, so the page counts commits to it
+target=()
+if [ -n "${M6E_STABLE_BRANCH:-}" ]; then target=(--target "${M6E_STABLE_BRANCH}"); fi
+log "release ${VERSION} target=${M6E_STABLE_BRANCH:-<default branch>}"
+
 # Created empty, titled by the tag message; a 409 means a re-run already made it.
-if timeout "${timeout_s}" tea release create --repo "${repo}"                          \
+if timeout "${timeout_s}" tea release create --repo "${repo}" "${target[@]}"           \
                                             --tag "${VERSION}" --title "${title}" --note "${notes}" </dev/null; then
 	log "created release ${VERSION}"
 else
