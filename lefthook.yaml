@@ -17,6 +17,9 @@ pre-push:
     - name: release-test
       glob: "forgejo-release/release*.sh"
       run: bash forgejo-release/release.test.sh
+    - name: gh-release-test
+      glob: "gh-release/*.sh"
+      run: bash gh-release/release.test.sh
     - name: yamllint
       glob: "*.{yml,yaml}"
       run: yamllint --strict {all_files}

@@ -1,0 +1,14 @@
+---
+# SPDX-FileCopyrightText: 2026 Damián Búho <damian.buho@proton.me>
+#
+# SPDX-License-Identifier: MIT
+#
+# gh-release — mint a tag’s GitHub release from its tag message, attaching each binary.
+name: gh-release
+description: Mint a GitHub release via gh, titled by the tag message, attaching binaries and sidecars.
+# Inputs ride the step env: RELEASE_TAG, RELEASE_PATH, RELEASE_URL, RELEASE_TARGET; GH_TOKEN for gh.
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      run: bash "$GITHUB_ACTION_PATH/release.sh"
