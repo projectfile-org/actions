@@ -30,4 +30,19 @@ args="$(tr '\0' '\n' < "${work}/gh.log")"
 for want in "release" "create" "0.1.0" "--target" "main" "Faster start" "[rules](https://github.com/o/r/blob/0.1.0/docs/rules.md)" "dist/x-linux-x86_64" "dist/x-linux-x86_64.asc"; do
 	[[ "${args}" == *"${want}"* ]] || { echo "gh-release-test: FAIL missing ${want}" >&2; echo "${args}" >&2; exit 1; }
 done
-echo "gh-release-test: PASS title, links, target and 2 assets"
+
+# A signed tag re-signed over its own message reaches the release with neither armor
+ssh-keygen -q -t ed25519 -N "" -f "${work}/key"
+git config gpg.format ssh
+git config user.signingkey "${work}/key"
+git tag --sign --cleanup=verbatim --message=$'Signed\n\n# Notes\n' 0.2.0
+git tag --force --sign --cleanup=verbatim --message="$(git tag --list 0.2.0 --format='%(contents)')" 0.2.0
+body="$(bash "${here}/tag-message.sh" 0.2.0 body 2>/dev/null)"
+[[ "${body}" == "# Notes" ]] || { echo "gh-release-test: FAIL signed body=${body}" >&2; exit 1; }
+
+# A checkout that flattened the tag to lightweight is refetched from origin
+git clone --quiet "${work}/repo" "${work}/clone"
+git -C "${work}/clone" tag --force 0.1.0 '0.1.0^{commit}'
+title="$(cd "${work}/clone" && bash "${here}/tag-message.sh" 0.1.0 title 2>/dev/null)"
+[[ "${title}" == "Faster start" ]] || { echo "gh-release-test: FAIL flattened title=${title}" >&2; exit 1; }
+echo "gh-release-test: PASS title, links, target, 2 assets, signed and flattened tags"
