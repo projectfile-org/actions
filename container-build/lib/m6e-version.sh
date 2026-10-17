@@ -56,6 +56,13 @@ if [ -n "${M6E_VERSION:-}" ]; then
     exit 0
 fi
 
+# 1b. Release tag — the tag this run publishes, found on its stable branch commit when the ref is no tag.
+if [ -n "${M6E_RELEASE_TAG:-}" ]; then
+    _ver_log "version from M6E_RELEASE_TAG: ${M6E_RELEASE_TAG}"
+    printf '%s\n' "${M6E_RELEASE_TAG}"
+    exit 0
+fi
+
 # 2. CI tag ref — resolves the tag even when the runner's shallow checkout never
 #    fetched it, so a tag build stamps the tag and not the fallback sha.
 if [ "${GITHUB_REF_TYPE:-}" = "tag" ] && [ -n "${GITHUB_REF_NAME:-}" ]; then
