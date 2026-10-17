@@ -33,6 +33,7 @@ identity:
       де виконується робочий процес; резолвер тримає диспетчеризацію, а ця бібліотека
       володіє рідною CI-рецептою для кожної цілі (Ports and Adapters).
   version: 1.0.0
+  visibility: public
 includes:
   - https://kiota.ch/damian-buho/metadata/raw/branch/main/forge/codeberg.yaml
   - https://kiota.ch/damian-buho/metadata/raw/branch/main/forge/github.yaml
