@@ -31,6 +31,14 @@ for want in "release" "create" "0.1.0" "--target" "main" "Faster start" "[rules]
 	[[ "${args}" == *"${want}"* ]] || { echo "gh-release-test: FAIL missing ${want}" >&2; echo "${args}" >&2; exit 1; }
 done
 
+# M6E_RELEASE_TAG alone names the tag and roots the links at the forge blob URL
+: > "${work}/gh.log"
+PATH="${work}/bin:${PATH}" M6E_RELEASE_TAG=0.1.0 GITHUB_SERVER_URL=https://github.com GITHUB_REPOSITORY=o/r RELEASE_TARGET=main bash "${here}/release.sh"
+args="$(tr '\0' '\n' < "${work}/gh.log")"
+for want in "0.1.0" "[rules](https://github.com/o/r/blob/0.1.0/docs/rules.md)"; do
+	[[ "${args}" == *"${want}"* ]] || { echo "gh-release-test: FAIL release-tag fallback missing ${want}" >&2; echo "${args}" >&2; exit 1; }
+done
+
 # A signed tag re-signed over its own message reaches the release with neither armor
 ssh-keygen -q -t ed25519 -N "" -f "${work}/key"
 git config gpg.format ssh
@@ -45,4 +53,4 @@ git clone --quiet "${work}/repo" "${work}/clone"
 git -C "${work}/clone" tag --force 0.1.0 '0.1.0^{commit}'
 title="$(cd "${work}/clone" && bash "${here}/tag-message.sh" 0.1.0 title 2>/dev/null)"
 [[ "${title}" == "Faster start" ]] || { echo "gh-release-test: FAIL flattened title=${title}" >&2; exit 1; }
-echo "gh-release-test: PASS title, links, target, 2 assets, signed and flattened tags"
+echo "gh-release-test: PASS title, links, target, 2 assets, release-tag fallback, signed and flattened tags"

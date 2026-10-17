@@ -10,7 +10,9 @@ set -eu
 
 log() { printf '[gh-release] %s\n' "$*" >&2; }
 
-tag=${RELEASE_TAG:?gh-release: RELEASE_TAG (the git tag) is required}
+tag=${RELEASE_TAG:-${M6E_RELEASE_TAG:-}}
+[ -n "${tag}" ] || { log "error: RELEASE_TAG or M6E_RELEASE_TAG (the git tag) is required"; exit 1; }
+RELEASE_URL=${RELEASE_URL:-${GITHUB_SERVER_URL:+${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/blob/${tag}}}
 path=${RELEASE_PATH:-}
 here=$(dirname "$0")
 

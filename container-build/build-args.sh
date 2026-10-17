@@ -46,6 +46,9 @@ while IFS= read -r pair; do                     # one NAME=VALUE per line
   case "${_name}" in
     SCCACHE_REDIS_ENDPOINT|CCACHE_REMOTE_STORAGE|SCCACHE_BUCKET|SCCACHE_MEMCACHED_ENDPOINT)
       echo "build-arg name=${_name} value-len=${#_val}" ;;
+    M6E_VERSION)
+      export M6E_VERSION="${_val}"                 # the label resolver stamps the same version
+      echo "build-arg name=${_name} value=${_val}" ;;
     *)
       echo "build-arg name=${_name}" ;;
   esac
@@ -77,7 +80,7 @@ done
 # instead of the branch name a ${{ github.ref_name }} build-arg would leak. No
 # m6e submodule needed. Skipped when the caller already listed M6E_VERSION.
 version_script="${GITHUB_ACTION_PATH}/../lib/m6e-version.sh"
-if ! grep -q '^M6E_VERSION' <<<"${BUILD_ARGS:-}"; then
+if ! grep -q '^M6E_VERSION=.' <<<"${BUILD_ARGS:-}"; then
   if [ -x "${version_script}" ]; then
     m6e_version="$("${version_script}" 2>/dev/null || true)"
     if [ -n "${m6e_version}" ]; then
