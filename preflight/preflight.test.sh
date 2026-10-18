@@ -91,6 +91,7 @@ fi
 
 check "closed port" 1 PREFLIGHT_CHECK=hosts PREFLIGHT_RETRIES=1 PREFLIGHT_ENV="PREFLIGHT_HOSTS=127.0.0.1:1"
 expect "closed port named" "host=127.0.0.1:1 verdict=UNREACHABLE"
+check "fallback port used" 1 PREFLIGHT_CHECK=hosts PREFLIGHT_RETRIES=1 PREFLIGHT_ENV="PREFLIGHT_HOSTS=127.0.0.1::1"
 check "unset host skipped" 0 PREFLIGHT_CHECK=hosts PREFLIGHT_ENV="PREFLIGHT_HOSTS=: host: :3142"
 check "foreign env refused" 0 PREFLIGHT_CHECK=hosts PREFLIGHT_ENV="PATH=/nonexistent"
 expect "foreign env named" "env pair ignored name=[PATH]"

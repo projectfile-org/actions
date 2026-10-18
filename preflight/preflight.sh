@@ -139,11 +139,12 @@ check_images() {
 }
 
 check_hosts() {
-  local entry host port attempt
+  local entry host port fallback attempt
   for entry in ${PREFLIGHT_HOSTS:-}; do
-    host="${entry%:*}" port="${entry##*:}"
-    if [ -z "${host}" ] || [ -z "${port}" ] || [ "${host}" = "${entry}" ]; then
-      log "host=[${entry}] skipped — host or port unset"
+    IFS=: read -r host port fallback <<<"${entry}"
+    port="${port:-${fallback:-}}"
+    if [ -z "${host}" ] || [ -z "${port}" ]; then
+      log "host=[${entry}] skipped — host unset or port without default"
       continue
     fi
     for ((attempt = 1; ; attempt++)); do
