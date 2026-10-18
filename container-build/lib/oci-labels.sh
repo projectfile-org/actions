@@ -117,6 +117,15 @@ _lbl_emit "org.opencontainers.image.created"  "${_created}"
 _lbl_emit "org.m6e.ci.build-by"               "${M6E_BUILD_BY:-unknown}"
 _lbl_emit "org.m6e.ci.git-commit"             "${_git_sha_short}"
 
+# ── Provides: the commands this image adds under .container/*/command.d/ ─────
+_provides=""
+for _cmd in "${PROJECT_ROOT}"/.container/*/command.d/*; do
+    if [ -f "${_cmd}" ]; then _provides="${_provides}${_cmd##*/}"$'\n'; fi
+done
+_provides="$(printf '%s' "${_provides}" | LC_ALL=C sort --unique | paste --serial --delimiters=, -)"
+_lbl_log "provides commands=[${_provides}]"
+_lbl_emit "org.projectfile.provides"          "${_provides}"
+
 # ── Projectfile discovery ─────────────────────────────────────────────────────
 
 _pf_path="${M6E_PROJECTFILE_PATH:-}"
