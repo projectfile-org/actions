@@ -20,6 +20,9 @@ pre-push:
     - name: gh-release-test
       glob: "gh-release/*.sh"
       run: bash gh-release/release.test.sh
+    - name: preflight-test
+      glob: "preflight/*.sh"
+      run: bash preflight/preflight.test.sh
     - name: yamllint
       glob: "*.{yml,yaml}"
       run: yamllint --strict {all_files}

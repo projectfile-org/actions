@@ -139,6 +139,7 @@ stayed behind.
 | `oci-push`        | landed  | skopeo copy cell tar → registry (no daemon load); with `archives:`, buildah indexes the per-arch tars into one manifest list per cascade tag; with `heads:` and `variant:`, the tags follow the rules the project declares; retry+backoff on the crossing |
 | `image-scan`      | planned | scanner against `oci-archive:<artifact>.tar` (daemonless)|
 | `secrets-provision` | landed | `org.projectfile.ci.secrets` declarations → `.secrets/` tree (value-write / docker-run dispatcher) |
+| `preflight`       | landed  | host-side probe, no tool image: `images` resolves each ref to a digest (skopeo), checks its version range and `org.projectfile.provides` commands and caches the verdict by digest; `hosts` opens each `host:port`; `disk` checks free space |
 
 `live` is intentionally absent — it is rendered as fused run-steps by pf-ci, not
 dispatched here (see ["There is no `live` action"](#there-is-no-live-action-dissolved-into-run-steps)).

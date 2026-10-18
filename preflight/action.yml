@@ -1,0 +1,27 @@
+---
+# SPDX-FileCopyrightText: 2026 Damián Búho <damian.buho@proton.me>
+#
+# SPDX-License-Identifier: MIT
+name: preflight
+description: Prove on the host runner, in a run’s first seconds, that its images, hosts and disk are there.
+inputs:
+  check:
+    description: Which check to run — images, hosts or disk.
+    required: true
+  images:
+    description: One image per line as `IMAGE VERSION COMMANDS REQUIRES`, `-` for an empty field (rendered by pf-ci).
+    required: false
+    default: ""
+  env:
+    description: Newline-separated PREFLIGHT_*=VALUE pairs (PREFLIGHT_HOSTS, PREFLIGHT_MIN_FREE_GIB).
+    required: false
+    default: ""
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      env:
+        PREFLIGHT_CHECK: ${{ inputs.check }}
+        PREFLIGHT_IMAGES: ${{ inputs.images }}
+        PREFLIGHT_ENV: ${{ inputs.env }}
+      run: bash "$GITHUB_ACTION_PATH/preflight.sh"
