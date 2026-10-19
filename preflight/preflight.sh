@@ -34,7 +34,7 @@ compose_ref() {
   local image="$1" version="$2" ref
   ref="${image}"
   [[ "${version}" == - || "${image##*/}" == *:* ]] || ref="${image}:${version}"
-  [[ "${ref%%/*}" == *[.:]* || "${ref%%/*}" == localhost ]] || ref="docker.io/${ref}"
+  [[ "${ref}" == */* && ("${ref%%/*}" == *[.:]* || "${ref%%/*}" == localhost) ]] || ref="docker.io/${ref}"
   printf '%s' "${ref}"
 }
 
@@ -59,9 +59,10 @@ in_range() {
   done
 }
 
-# Names why skopeo could not read a ref: ABSENT, UNKNOWN (ghcr answers private and absent alike) or UNREACHABLE.
+# Names why skopeo could not read a ref: TIMEOUT, ABSENT, UNKNOWN (ghcr answers private and absent alike) or UNREACHABLE.
 classify() {
-  case "$1" in
+  [ "$1" -ne 124 ] || { echo TIMEOUT; return; }
+  case "$2" in
     *"manifest unknown"* | *"not found"* | *"name unknown"*) echo ABSENT ;;
     *nauthorized* | *denied* | *"authentication required"* | *403*) echo UNKNOWN ;;
     *) echo UNREACHABLE ;;
@@ -69,16 +70,23 @@ classify() {
 }
 
 check_image() {
-  local image="$1" version="$2" commands="$3" requires="$4" ref sink err manifest digest key cache config provides label cmd
+  local image="$1" version="$2" commands="$3" requires="$4" ref sink err rc verdict manifest digest key cache config provides label cmd
   ref="$(compose_ref "${image}" "${version}")"
   sink="${ref%%/*}"
   if [[ "${ref}" == *registry.invalid* ]]; then
     fail "image=${ref} sink=${sink} verdict=UNSET :: the image's registry variable has no value on this forge"
     return
   fi
-  if ! manifest="$(timeout "${PREFLIGHT_TIMEOUT}" skopeo inspect --raw --retry-times "${PREFLIGHT_RETRIES}" "docker://${ref}" 2>"${errfile}")"; then
+  rc=0
+  manifest="$(timeout "${PREFLIGHT_TIMEOUT}" skopeo inspect --raw --retry-times "${PREFLIGHT_RETRIES}" "docker://${ref}" 2>"${errfile}")" || rc=$?
+  if [ "${rc}" -ne 0 ]; then
     err="$(tr '\n' ' ' <"${errfile}")"
-    fail "image=${ref} sink=${sink} verdict=$(classify "${err}") :: ${err}"
+    [ "${rc}" -ne 124 ] || err="no answer within ${PREFLIGHT_TIMEOUT}s"
+    verdict="$(classify "${rc}" "${err}")"
+    case "${verdict}" in
+      ABSENT | UNKNOWN) fail "image=${ref} sink=${sink} verdict=${verdict} :: ${err:-skopeo exit=${rc} with no output}" ;;
+      *) warn "image=${ref} sink=${sink} verdict=${verdict} unchecked — the job’s own pull decides :: ${err:-skopeo exit=${rc} with no output}" ;;
+    esac
     return
   fi
   digest="$(skopeo manifest-digest /dev/stdin <<<"${manifest}")"

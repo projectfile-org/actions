@@ -23,6 +23,8 @@ case "$*" in
     case "${STUB_MODE:-ok}" in
       absent) echo "manifest unknown" >&2; exit 1 ;;
       private) echo "unauthorized: authentication required" >&2; exit 1 ;;
+      offline) echo "dial tcp: connection refused" >&2; exit 1 ;;
+      hang) exec sleep 5 ;;
       *) echo '{"schemaVersion":2}' ;;
     esac ;;
   *--config*) printf '{"config":{"Labels":{"org.opencontainers.image.version":"%s","org.projectfile.provides":"%s"}}}\n' "${STUB_VERSION:-1.5.0}" "${STUB_PROVIDES-auto-go-test,auto-go-lint}" ;;
@@ -66,6 +68,14 @@ expect "unknown verdict" "verdict=UNKNOWN"
 check "unset registry" 1 PREFLIGHT_CHECK=images PREFLIGHT_IMAGES="registry.invalid/d9t/go-tools latest - -"
 check "bare hub name is qualified" 0 PREFLIGHT_CHECK=images PREFLIGHT_IMAGES="hadolint/hadolint v2.14.0 - -"
 expect "docker.io prefix" "image=docker.io/hadolint/hadolint:v2.14.0"
+check "bare tagged hub name is qualified" 1 PREFLIGHT_CHECK=images STUB_MODE=absent PREFLIGHT_IMAGES="docker:29.8.1-cli - - -"
+expect "bare tagged hub sink" "image=docker.io/docker:29.8.1-cli sink=docker.io"
+check "registry port kept" 0 PREFLIGHT_CHECK=images STUB_DIGEST=g1 PREFLIGHT_IMAGES="registry.local:5000/a/b:1 - - -"
+expect "registry port sink" "image=registry.local:5000/a/b:1 digest="
+check "timeout only warns" 0 PREFLIGHT_CHECK=images STUB_MODE=hang PREFLIGHT_TIMEOUT=1 PREFLIGHT_IMAGES="$(img)"
+expect "timeout named" "verdict=TIMEOUT unchecked — the job’s own pull decides :: no answer within 1s"
+check "unreachable only warns" 0 PREFLIGHT_CHECK=images STUB_MODE=offline PREFLIGHT_IMAGES="$(img)"
+expect "unreachable keeps error" "verdict=UNREACHABLE unchecked — the job’s own pull decides :: dial tcp: connection refused"
 check "lower edge in range" 0 PREFLIGHT_CHECK=images STUB_VERSION=1.4.0 STUB_DIGEST=e1 PREFLIGHT_IMAGES="$(img - '>=1.4.0,<2.0.0')"
 check "upper edge out of range" 1 PREFLIGHT_CHECK=images STUB_VERSION=2.0.0 STUB_DIGEST=e2 PREFLIGHT_IMAGES="$(img - '>=1.4.0,<2.0.0')"
 expect "range names both versions" "version=2.0.0 outside requires=>=1.4.0,<2.0.0"
