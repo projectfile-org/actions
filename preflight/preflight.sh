@@ -9,10 +9,16 @@ PREFLIGHT_RETRIES="${PREFLIGHT_RETRIES:-3}"
 PREFLIGHT_TIMEOUT="${PREFLIGHT_TIMEOUT:-30}"
 failures=()
 warnings=0
+passes=0
+green='' yellow='' red='' reset=''
+if [ -z "${NO_COLOR:-}${PREFLIGHT_NO_COLOR:-}" ] && [ "${TERM:-}" != dumb ]; then
+  green=$'\e[32m' yellow=$'\e[33m' red=$'\e[31m' reset=$'\e[0m'
+fi
 
-log() { echo "preflight check=${PREFLIGHT_CHECK} $*"; }
-fail() { echo "::error::preflight check=${PREFLIGHT_CHECK} $*" >&2; failures+=("$*"); }
-warn() { echo "::warning::preflight check=${PREFLIGHT_CHECK} $*" >&2; warnings=$((warnings + 1)); }
+log() { echo "$*"; }
+pass() { echo "${green}✓ $*${reset}"; passes=$((passes + 1)); }
+fail() { echo "::error::✗ $*" >&2; failures+=("$*"); }
+warn() { echo "::warning::⚠ $*" >&2; warnings=$((warnings + 1)); }
 
 # Exports each PREFLIGHT_* pair of the env input; any other name is refused.
 while IFS= read -r pair; do
@@ -69,40 +75,48 @@ classify() {
   esac
 }
 
+# Reads skopeo inspect VIEW of REF into out with per-attempt timeout and backoff; fails ABSENT/UNKNOWN, warns on a transient end.
+inspect() {
+  local view="$1" ref="$2" sink="$3" attempt rc err verdict
+  for ((attempt = 1; ; attempt++)); do
+    rc=0
+    out="$(timeout "${PREFLIGHT_TIMEOUT}" skopeo inspect "${view}" "docker://${ref}" 2>"${errfile}")" || rc=$?
+    [ "${rc}" -ne 0 ] || return 0
+    err="$(tr '\n' ' ' <"${errfile}")"
+    [ "${rc}" -ne 124 ] || err="no answer within ${PREFLIGHT_TIMEOUT}s"
+    err="${err:-skopeo exit=${rc} with no output}"
+    verdict="$(classify "${rc}" "${err}")"
+    case "${verdict}" in
+      ABSENT | UNKNOWN) fail "image=${ref} sink=${sink} verdict=${verdict} :: ${err}"; return 1 ;;
+    esac
+    if [ "${attempt}" -ge "${PREFLIGHT_RETRIES}" ]; then
+      warn "image=${ref} sink=${sink} verdict=${verdict} attempts=${attempt} unchecked — the job’s own pull decides :: ${err}"
+      return 1
+    fi
+    log "↻ image=${ref} view=${view} attempt=${attempt}/${PREFLIGHT_RETRIES} verdict=${verdict} retrying :: ${err}"
+    backoff "${attempt}"
+  done
+}
+
 check_image() {
-  local image="$1" version="$2" commands="$3" requires="$4" ref sink err rc verdict manifest digest key cache config provides label cmd
+  local image="$1" version="$2" commands="$3" requires="$4" ref sink out digest key cache provides label cmd
   ref="$(compose_ref "${image}" "${version}")"
   sink="${ref%%/*}"
   if [[ "${ref}" == *registry.invalid* ]]; then
     fail "image=${ref} sink=${sink} verdict=UNSET :: the image's registry variable has no value on this forge"
     return
   fi
-  rc=0
-  manifest="$(timeout "${PREFLIGHT_TIMEOUT}" skopeo inspect --raw --retry-times "${PREFLIGHT_RETRIES}" "docker://${ref}" 2>"${errfile}")" || rc=$?
-  if [ "${rc}" -ne 0 ]; then
-    err="$(tr '\n' ' ' <"${errfile}")"
-    [ "${rc}" -ne 124 ] || err="no answer within ${PREFLIGHT_TIMEOUT}s"
-    verdict="$(classify "${rc}" "${err}")"
-    case "${verdict}" in
-      ABSENT | UNKNOWN) fail "image=${ref} sink=${sink} verdict=${verdict} :: ${err:-skopeo exit=${rc} with no output}" ;;
-      *) warn "image=${ref} sink=${sink} verdict=${verdict} unchecked — the job’s own pull decides :: ${err:-skopeo exit=${rc} with no output}" ;;
-    esac
-    return
-  fi
-  digest="$(skopeo manifest-digest /dev/stdin <<<"${manifest}")"
+  inspect --raw "${ref}" "${sink}" || return 0
+  digest="$(skopeo manifest-digest /dev/stdin <<<"${out}")"
   key="$(printf '%s %s' "${commands}" "${requires}" | sha256sum | cut --characters=1-16)"
   cache="${cache_dir}/${digest#*:}-${key}"
   if [ -f "${cache}" ]; then
-    log "image=${ref} digest=${digest} verdict=ok cached=${cache}"
+    pass "image=${ref} digest=${digest:7:12} verdict=ok cached"
     return
   fi
-  if ! config="$(timeout "${PREFLIGHT_TIMEOUT}" skopeo inspect --config --retry-times "${PREFLIGHT_RETRIES}" "docker://${ref}" 2>"${errfile}")"; then
-    fail "image=${ref} sink=${sink} verdict=UNREADABLE :: $(tr '\n' ' ' <"${errfile}")"
-    return
-  fi
-  label="$(jq --raw-output '.config.Labels["org.opencontainers.image.version"] // ""' <<<"${config}")"
-  provides="$(jq --raw-output '.config.Labels["org.projectfile.provides"] // ""' <<<"${config}")"
-  log "image=${ref} digest=${digest} version=[${label}] requires=[${requires}] provides=[${provides}]"
+  inspect --config "${ref}" "${sink}" || return 0
+  label="$(jq --raw-output '.config.Labels["org.opencontainers.image.version"] // ""' <<<"${out}")"
+  provides="$(jq --raw-output '.config.Labels["org.projectfile.provides"] // ""' <<<"${out}")"
   local before="${#failures[@]}" warned="${warnings}"
   if [ "${requires}" != - ]; then
     if [[ ! "${label#v}" =~ ^[0-9] ]]; then
@@ -113,7 +127,7 @@ check_image() {
   fi
   if [ "${commands}" != - ]; then
     if [ -z "${provides}" ]; then
-      warn "image=${ref} carries no org.projectfile.provides label — commands [${commands}] unchecked"
+      warn "image=${ref} version=[${label}] carries no org.projectfile.provides label — commands [${commands}] unchecked"
     else
       IFS=, read -r -a wanted <<<"${commands}"
       for cmd in "${wanted[@]}"; do
@@ -121,14 +135,9 @@ check_image() {
       done
     fi
   fi
-  if [ "${#failures[@]}" -ne "${before}" ]; then
-    return
-  elif [ "${warnings}" -ne "${warned}" ]; then
-    log "image=${ref} digest=${digest} verdict=ok-with-warnings cache-write=skipped"
-  else
-    printf '%s\n' "${ref}" >"${cache}.$$" && mv --force "${cache}.$$" "${cache}"
-    log "image=${ref} digest=${digest} verdict=ok cache-write=${cache}"
-  fi
+  [ "${#failures[@]}" -eq "${before}" ] && [ "${warnings}" -eq "${warned}" ] || return 0
+  printf '%s\n' "${ref}" >"${cache}.$$" && mv --force "${cache}.$$" "${cache}"
+  pass "image=${ref} digest=${digest:7:12} version=[${label}] verdict=ok"
 }
 
 check_images() {
@@ -157,14 +166,14 @@ check_hosts() {
     fi
     for ((attempt = 1; ; attempt++)); do
       if timeout 5 bash -c "exec 3<>'/dev/tcp/${host}/${port}'" 2>/dev/null; then
-        log "host=${host}:${port} verdict=ok attempt=${attempt}"
+        pass "host=${host}:${port} verdict=ok attempt=${attempt}"
         break
       fi
       if [ "${attempt}" -ge "${PREFLIGHT_RETRIES}" ]; then
         fail "host=${host}:${port} verdict=UNREACHABLE attempts=${attempt}"
         break
       fi
-      log "host=${host}:${port} attempt=${attempt}/${PREFLIGHT_RETRIES} failed — retrying"
+      log "↻ host=${host}:${port} attempt=${attempt}/${PREFLIGHT_RETRIES} retrying"
       backoff "${attempt}"
     done
   done
@@ -182,7 +191,7 @@ check_disk() {
     if [ "${free}" -lt "${min}" ]; then
       fail "dir=${dir} free=${free}GiB below min=${min}GiB"
     else
-      log "dir=${dir} free=${free}GiB min=${min}GiB verdict=ok"
+      pass "dir=${dir} free=${free}GiB min=${min}GiB verdict=ok"
     fi
   done
 }
@@ -194,8 +203,13 @@ case "${PREFLIGHT_CHECK}" in
   *) fail "unknown check — want images, hosts or disk" ;;
 esac
 
+totals="ok=${passes} warnings=${warnings} failures=${#failures[@]}"
 if [ "${#failures[@]}" -gt 0 ]; then
-  log "verdict=failed failures=${#failures[@]}"
+  echo "${red}✗ preflight check=${PREFLIGHT_CHECK} verdict=failed ${totals}${reset}"
+  for failure in "${failures[@]}"; do echo "${red}  ✗ ${failure}${reset}"; done
   exit 1
+elif [ "${warnings}" -gt 0 ]; then
+  echo "${yellow}⚠ preflight check=${PREFLIGHT_CHECK} verdict=ok ${totals}${reset}"
+else
+  echo "${green}✓ preflight check=${PREFLIGHT_CHECK} verdict=ok ${totals}${reset}"
 fi
-log "verdict=ok"

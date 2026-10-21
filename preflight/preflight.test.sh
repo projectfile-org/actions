@@ -25,9 +25,10 @@ case "$*" in
       private) echo "unauthorized: authentication required" >&2; exit 1 ;;
       offline) echo "dial tcp: connection refused" >&2; exit 1 ;;
       hang) exec sleep 5 ;;
+      flaky) [ -f "${STUB_LOG}.flaky" ] || { : >"${STUB_LOG}.flaky"; echo "dial tcp: i/o timeout" >&2; exit 1; }; echo '{"schemaVersion":2}' ;;
       *) echo '{"schemaVersion":2}' ;;
     esac ;;
-  *--config*) printf '{"config":{"Labels":{"org.opencontainers.image.version":"%s","org.projectfile.provides":"%s"}}}\n' "${STUB_VERSION:-1.5.0}" "${STUB_PROVIDES-auto-go-test,auto-go-lint}" ;;
+  *--config*) [ "${STUB_CONFIG_MODE:-ok}" != hang ] || exec sleep 5; printf '{"config":{"Labels":{"org.opencontainers.image.version":"%s","org.projectfile.provides":"%s"}}}\n' "${STUB_VERSION:-1.5.0}" "${STUB_PROVIDES-auto-go-test,auto-go-lint}" ;;
 esac
 STUB
 chmod +x "${work}/bin/skopeo"
@@ -72,10 +73,16 @@ check "bare tagged hub name is qualified" 1 PREFLIGHT_CHECK=images STUB_MODE=abs
 expect "bare tagged hub sink" "image=docker.io/docker:29.8.1-cli sink=docker.io"
 check "registry port kept" 0 PREFLIGHT_CHECK=images STUB_DIGEST=g1 PREFLIGHT_IMAGES="registry.local:5000/a/b:1 - - -"
 expect "registry port sink" "image=registry.local:5000/a/b:1 digest="
-check "timeout only warns" 0 PREFLIGHT_CHECK=images STUB_MODE=hang PREFLIGHT_TIMEOUT=1 PREFLIGHT_IMAGES="$(img)"
-expect "timeout named" "verdict=TIMEOUT unchecked — the job’s own pull decides :: no answer within 1s"
-check "unreachable only warns" 0 PREFLIGHT_CHECK=images STUB_MODE=offline PREFLIGHT_IMAGES="$(img)"
-expect "unreachable keeps error" "verdict=UNREACHABLE unchecked — the job’s own pull decides :: dial tcp: connection refused"
+check "timeout only warns" 0 PREFLIGHT_CHECK=images STUB_MODE=hang PREFLIGHT_TIMEOUT=1 PREFLIGHT_RETRIES=1 PREFLIGHT_IMAGES="$(img)"
+expect "timeout named" "verdict=TIMEOUT attempts=1 unchecked — the job’s own pull decides :: no answer within 1s"
+check "unreachable only warns" 0 PREFLIGHT_CHECK=images STUB_MODE=offline PREFLIGHT_RETRIES=2 PREFLIGHT_IMAGES="$(img)"
+expect "unreachable retried" "attempt=1/2 verdict=UNREACHABLE retrying"
+expect "unreachable keeps error" "verdict=UNREACHABLE attempts=2 unchecked — the job’s own pull decides :: dial tcp: connection refused"
+check "config timeout only warns" 0 PREFLIGHT_CHECK=images STUB_CONFIG_MODE=hang STUB_DIGEST=c1 PREFLIGHT_TIMEOUT=1 PREFLIGHT_RETRIES=1 PREFLIGHT_IMAGES="$(img)"
+expect "config timeout named" "verdict=TIMEOUT attempts=1 unchecked"
+rm --force "${work}/log.flaky"
+check "flaky read recovers" 0 PREFLIGHT_CHECK=images STUB_MODE=flaky STUB_DIGEST=c2 PREFLIGHT_IMAGES="$(img)"
+expect "flaky read passes" "image=kiota.ch/d9t/go-tools:latest digest=c2 version=[1.5.0] verdict=ok"
 check "lower edge in range" 0 PREFLIGHT_CHECK=images STUB_VERSION=1.4.0 STUB_DIGEST=e1 PREFLIGHT_IMAGES="$(img - '>=1.4.0,<2.0.0')"
 check "upper edge out of range" 1 PREFLIGHT_CHECK=images STUB_VERSION=2.0.0 STUB_DIGEST=e2 PREFLIGHT_IMAGES="$(img - '>=1.4.0,<2.0.0')"
 expect "range names both versions" "version=2.0.0 outside requires=>=1.4.0,<2.0.0"
@@ -94,10 +101,14 @@ expect "no provides unchecked" "carries no org.projectfile.provides label"
 : >"${work}/log"
 check "cold digest" 0 PREFLIGHT_CHECK=images STUB_DIGEST=f1 PREFLIGHT_IMAGES="$(img auto-go-test)"
 check "warm digest" 0 PREFLIGHT_CHECK=images STUB_DIGEST=f1 PREFLIGHT_IMAGES="$(img auto-go-test)"
-expect "warm digest is cached" "verdict=ok cached="
+expect "warm digest is cached" "verdict=ok cached"
 if [ "$(grep --count -- '--config' "${work}/log")" -eq 1 ]; then passed=$((passed + 1)); else
   failed=$((failed + 1)); echo "preflight-test: FAIL a warm digest must fetch no config blob" >&2
 fi
+
+check "no color" 1 NO_COLOR=1 PREFLIGHT_CHECK=network
+if grep --quiet $'\e' "${work}/out"; then failed=$((failed + 1)); echo "preflight-test: FAIL NO_COLOR printed an escape" >&2; else passed=$((passed + 1)); fi
+expect "summary names failures" "  ✗ unknown check"
 
 check "closed port" 1 PREFLIGHT_CHECK=hosts PREFLIGHT_RETRIES=1 PREFLIGHT_ENV="PREFLIGHT_HOSTS=127.0.0.1:1"
 expect "closed port named" "host=127.0.0.1:1 verdict=UNREACHABLE"
