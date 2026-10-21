@@ -123,7 +123,7 @@ runs:
         M6E_BUILDAH_CPU_SHARE: ${{ env.M6E_BUILDAH_CPU_SHARE }}
       run: bash "$GITHUB_ACTION_PATH/build.sh"
     # Forgejo's v4 fork, paired with pf-ci's forgejo download-artifact pin.
-    - uses: https://code.forgejo.org/forgejo/upload-artifact@16871d9e8cfcf27ff31822cac382bbb5450f1e1e  # v4
+    - uses: forgejo/upload-artifact@16871d9e8cfcf27ff31822cac382bbb5450f1e1e  # v4
       with:
         name: ${{ inputs.artifact-name }}
         # Stores the tar as is: layers are uncompressed, and gzip costs about 20 s single-threaded.
