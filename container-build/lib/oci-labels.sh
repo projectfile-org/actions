@@ -117,14 +117,17 @@ _lbl_emit "org.opencontainers.image.created"  "${_created}"
 _lbl_emit "org.m6e.ci.build-by"               "${M6E_BUILD_BY:-unknown}"
 _lbl_emit "org.m6e.ci.git-commit"             "${_git_sha_short}"
 
-# ── Provides: the commands this image adds under .container/*/command.d/ ─────
+# ── Provides: command.d entries, binary artifact commands, org.projectfile.provides ─
 _provides=""
 for _cmd in "${PROJECT_ROOT}"/.container/*/command.d/*; do
     if [ -f "${_cmd}" ]; then _provides="${_provides}${_cmd##*/}"$'\n'; fi
 done
-_provides="$(printf '%s' "${_provides}" | LC_ALL=C sort --unique | paste --serial --delimiters=, -)"
-_lbl_log "provides commands=[${_provides}]"
-_lbl_emit "org.projectfile.provides"          "${_provides}"
+# Emits every command collected so far as one sorted comma list.
+_provides_emit() {
+    _provides="$(printf '%s' "${_provides}" | sed '/^$/d' | LC_ALL=C sort --unique | paste --serial --delimiters=, -)"
+    _lbl_log "provides commands=[${_provides}]"
+    _lbl_emit "org.projectfile.provides"          "${_provides}"
+}
 
 # ── Projectfile discovery ─────────────────────────────────────────────────────
 
@@ -139,6 +142,7 @@ if [ -z "${_pf_path}" ]; then
 fi
 if [ -z "${_pf_path}" ]; then
     _lbl_log "no projectfile in root=${PROJECT_ROOT} — projectfile labels skipped"
+    _provides_emit
     exit 0
 fi
 
@@ -169,6 +173,7 @@ elif [ -n "${PF_CLI_IMAGE:-}" ]; then
 fi
 if [ ${#_pf_cmd[@]} -eq 0 ]; then
     _lbl_log "pf-cli unavailable (path=${_pf_path}) — projectfile labels skipped"
+    _provides_emit
     exit 0
 fi
 
@@ -227,6 +232,10 @@ _lbl_emit "org.opencontainers.image.title"       "${OCI_LABEL_TITLE}"
 _lbl_emit "org.opencontainers.image.description" "${OCI_LABEL_DESCRIPTION}"
 _lbl_emit "org.opencontainers.image.licenses"    "${OCI_LABEL_LICENSES}"
 _lbl_emit "org.opencontainers.image.source"      "${OCI_LABEL_SOURCE}"
+
+_provides="${_provides}$(_pf get --file "${_pf_path}" --expand --default '' 'org.projectfile.artifacts{kind=binary}.command')"$'\n'
+_provides="${_provides}$(_pf get --file "${_pf_path}" --default '' 'org.projectfile.provides[]')"$'\n'
+_provides_emit
 
 # ── User labels: ext.m6e.build.labels passthrough (deterministic order) ──────
 # --expand-env resolves ${VAR} refs in label VALUES; when unset refs elsewhere
