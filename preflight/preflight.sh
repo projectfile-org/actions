@@ -99,7 +99,7 @@ inspect() {
 }
 
 check_image() {
-  local image="$1" version="$2" commands="$3" requires="$4" ref sink out digest key cache provides label cmd
+  local image="$1" version="$2" commands="$3" requires="$4" ref sink out digest key cache provides label cmd unchecked=""
   ref="$(compose_ref "${image}" "${version}")"
   sink="${ref%%/*}"
   if [[ "${ref}" == *registry.invalid* ]]; then
@@ -126,18 +126,20 @@ check_image() {
     fi
   fi
   if [ "${commands}" != - ]; then
-    if [ -z "${provides}" ]; then
-      warn "image=${ref} version=[${label}] carries no org.projectfile.provides label — commands [${commands}] unchecked"
-    else
-      IFS=, read -r -a wanted <<<"${commands}"
-      for cmd in "${wanted[@]}"; do
-        [[ ",${provides}," == *",${cmd},"* ]] || warn "image=${ref} provides=[${provides}] lists no command=${cmd} — a PATH binary is not listed"
-      done
-    fi
+    IFS=, read -r -a wanted <<<"${commands}"
+    for cmd in "${wanted[@]}"; do
+      if [[ ",${provides}," == *",${cmd},"* ]]; then
+        continue
+      elif [[ "${cmd}" == auto-* ]]; then
+        warn "image=${ref} version=[${label}] provides=[${provides}] lists no command=${cmd}"
+      else
+        unchecked="${unchecked:+${unchecked},}${cmd}"
+      fi
+    done
   fi
   [ "${#failures[@]}" -eq "${before}" ] && [ "${warnings}" -eq "${warned}" ] || return 0
   printf '%s\n' "${ref}" >"${cache}.$$" && mv --force "${cache}.$$" "${cache}"
-  pass "image=${ref} digest=${digest:7:12} version=[${label}] verdict=ok"
+  pass "image=${ref} digest=${digest:7:12} version=[${label}] verdict=ok${unchecked:+ unchecked=[${unchecked}]}"
 }
 
 check_images() {

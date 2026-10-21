@@ -96,7 +96,12 @@ expect "missing command named" "lists no command=auto-gremlins"
 check "warned verdict is not cached" 0 PREFLIGHT_CHECK=images STUB_DIGEST=e7 PREFLIGHT_IMAGES="$(img auto-go-test,auto-gremlins)"
 expect "warning repeats" "lists no command=auto-gremlins"
 check "no provides label warns" 0 PREFLIGHT_CHECK=images STUB_PROVIDES= STUB_DIGEST=e8 PREFLIGHT_IMAGES="$(img auto-go-test)"
-expect "no provides unchecked" "carries no org.projectfile.provides label"
+expect "no provides names the tool" "provides=[] lists no command=auto-go-test"
+check "path binary is info" 0 PREFLIGHT_CHECK=images STUB_DIGEST=e9 PREFLIGHT_IMAGES="$(img auto-go-test,go)"
+expect "path binary unchecked" "verdict=ok unchecked=[go]"
+check "unlabelled path binary is info" 0 PREFLIGHT_CHECK=images STUB_PROVIDES= STUB_DIGEST=e10 PREFLIGHT_IMAGES="$(img sh)"
+expect "unlabelled image cached" "verdict=ok unchecked=[sh]"
+if grep --quiet -- '::warning::' "${work}/out"; then failed=$((failed + 1)); echo "preflight-test: FAIL a PATH binary must not warn" >&2; else passed=$((passed + 1)); fi
 
 : >"${work}/log"
 check "cold digest" 0 PREFLIGHT_CHECK=images STUB_DIGEST=f1 PREFLIGHT_IMAGES="$(img auto-go-test)"
