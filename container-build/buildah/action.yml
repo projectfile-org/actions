@@ -122,13 +122,14 @@ runs:
         M6E_BUILDAH_MEMORY_SWAP: ${{ env.M6E_BUILDAH_MEMORY_SWAP }}
         M6E_BUILDAH_CPU_SHARE: ${{ env.M6E_BUILDAH_CPU_SHARE }}
       run: bash "$GITHUB_ACTION_PATH/build.sh"
-    # @v3 (NOT v7) because buildah is the FORGEJO backend: Forgejo's artifact store
-    # speaks the v1 protocol, and upload-artifact@v4+ (`@actions/artifact` v2) refuses a
-    # non-github.com server as GHES. Pairs with the resolver's forgejo Download pin
-    # (download-artifact@v3). The buildx sibling (GitHub) stays @v7.
-    - uses: actions/upload-artifact@v3
+    # Forgejo's v4 fork, paired with pf-ci's forgejo download-artifact pin.
+    - uses: https://code.forgejo.org/forgejo/upload-artifact@16871d9e8cfcf27ff31822cac382bbb5450f1e1e  # v4
       with:
         name: ${{ inputs.artifact-name }}
+        # Stores the tar as is: layers are uncompressed, and gzip costs about 20 s single-threaded.
+        compression-level: 0
+        # A re-run shares the run_id-scoped name, and v4 refuses a duplicate without this.
+        overwrite: true
         # Glob covers both the uncompressed .tar (default) and the .tar.zst produced
         # when M6E_ARCHIVE_COMPRESSION=zstd — build.sh leaves exactly one of them on
         # disk (zstd --rm drops the source .tar on success), so the glob matches one file.

@@ -165,9 +165,8 @@ buildah push "${image}" "${dest}"
 # wins net wall-clock. docker load AUTO-DETECTS gzip/bzip2/xz/zstd (Docker 25+), so
 # the live-stack consumer needs no change; the only consumer that cares is oci-push
 # (skopeo requires a seekable UNcompressed docker-archive — it decompresses to a
-# temp .tar before copy, see oci-push/push.sh). Layers inside the tar are typically
-# already gzip, so this squeezes mainly the manifest/config/metadata slack — modest
-# ratio but cheaper bytes on every hop. Default M6E_ARCHIVE_COMPRESSION=none keeps
+# temp .tar before copy, see oci-push/push.sh). A docker-archive tar always holds
+# UNcompressed layers, so zstd -3 shrinks it about 3.5×. Default M6E_ARCHIVE_COMPRESSION=none keeps
 # today’s uncompressed behaviour byte-for-byte. zstd for its fast DEcompress (every
 # consumer pays that, the builder pays compress once). Level 3 = the zstd sweet spot.
 case "${M6E_ARCHIVE_COMPRESSION:-none}" in
