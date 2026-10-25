@@ -133,6 +133,10 @@ inputs:
     description: Comma-separated arches to keep from `archives` (empty => every declared arch).
     required: false
     default: ""
+  withhold-arches:
+    description: Comma-separated arches this cell never builds, dropped from `archives` (empty => none).
+    required: false
+    default: ""
   heads:
     # One `<kind> <template>…` line per org.projectfile.image.heads kind (release, prerelease, trunk, branch)
     description: Declared head templates per build kind (empty or an omitted kind => the built-in cascade).
@@ -191,6 +195,7 @@ runs:
         SINK: ${{ inputs.sink }}
         ARCHIVES: ${{ inputs.archives }}
         ONLY_ARCHES: ${{ inputs.only-arches }}
+        WITHHOLD_ARCHES: ${{ inputs.withhold-arches }}
         HEADS: ${{ inputs.heads }}
         VARIANT: ${{ inputs.variant }}
         VARIANT_CELLS: ${{ inputs.variant-cells }}

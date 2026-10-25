@@ -52,12 +52,17 @@ if [ -n "${ARCHIVES:-}" ]; then
       echo "oci-push withholding arch=${_arch} archive=${_stem} only-arches=[${ONLY_ARCHES}]"
       continue
     fi
+    # WITHHOLD_ARCHES drops an arch the cell's matrix.exclude says nothing built
+    if [[ ",${WITHHOLD_ARCHES:-}," == *",${_arch},"* ]]; then
+      echo "oci-push withholding arch=${_arch} archive=${_stem} withhold-arches=[${WITHHOLD_ARCHES}]"
+      continue
+    fi
     arch_names+=("${_arch}")
     arch_stems+=("${_stem}")
   done <<< "${ARCHIVES}"
   # a list that keeps no declared arch would publish nothing under a green step
   if [ "${#arch_stems[@]}" -eq 0 ]; then
-    echo "oci-push: only-arches=[${ONLY_ARCHES:-}] keeps none of the declared archives" >&2
+    echo "oci-push: only-arches=[${ONLY_ARCHES:-}] withhold-arches=[${WITHHOLD_ARCHES:-}] keep none of the declared archives" >&2
     exit 1
   fi
 fi
