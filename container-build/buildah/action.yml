@@ -126,11 +126,11 @@ runs:
     - uses: forgejo/upload-artifact@16871d9e8cfcf27ff31822cac382bbb5450f1e1e  # v4
       with:
         name: ${{ inputs.artifact-name }}
-        # Stores the tar as is: layers are uncompressed, and gzip costs about 20 s single-threaded.
+        # build.sh already zstd-compresses the tar; zip deflate would only cost time.
         compression-level: 0
         # A re-run shares the run_id-scoped name, and v4 refuses a duplicate without this.
         overwrite: true
-        # Glob covers both the uncompressed .tar (default) and the .tar.zst produced
-        # when M6E_ARCHIVE_COMPRESSION=zstd — build.sh leaves exactly one of them on
-        # disk (zstd --rm drops the source .tar on success), so the glob matches one file.
+        # Forgejo truncates the remaining days, so 2 here expires the tar after 1 day.
+        retention-days: 2
+        # Matches the one file build.sh leaves: <name>.tar.zst, or <name>.tar when compression is none.
         path: ${{ inputs.artifact-name }}.tar*
