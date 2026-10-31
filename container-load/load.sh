@@ -37,5 +37,20 @@ trap 'rm --force "${load_log}"' EXIT
 
 _docker_load() { docker load --input "${archive_path}"; }
 
+# One load at a time per store: sibling jobs hold the same lock file in the shared graphroot.
+lock_wait="${M6E_LOAD_LOCK_WAIT:-600}"
+store_root="$(docker info --format '{{.Store.GraphRoot}}' 2>/dev/null)" || store_root=""
+lock_path="${store_root}/.container-load.lock"
+if [ "${lock_wait}" -gt 0 ] && [ -d "${store_root}" ] && command -v flock >/dev/null && { exec 9>"${lock_path}"; } 2>/dev/null; then
+  echo "container-load waiting for lock=${lock_path} wait=${lock_wait}s"
+  if flock --wait "${lock_wait}" 9; then
+    echo "container-load holds lock=${lock_path} archive=${archive_path}"
+  else
+    echo "container-load lock=${lock_path} not free after ${lock_wait}s, loading unlocked archive=${archive_path}" >&2
+  fi
+else
+  echo "container-load unlocked graphroot=${store_root:-unknown} wait=${lock_wait}s archive=${archive_path}"
+fi
+
 echo "container-load archive=${archive_path} attempts=${STORE_ATTEMPTS}"
 store_retry "archive=${archive_path}" "${load_log}" _docker_load

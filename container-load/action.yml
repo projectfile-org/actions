@@ -31,4 +31,6 @@ runs:
         # retry without a new action release. load.sh defaults them (3 attempts, 5s).
         M6E_LOAD_ATTEMPTS: ${{ env.M6E_LOAD_ATTEMPTS }}
         M6E_LOAD_RETRY_DELAY: ${{ env.M6E_LOAD_RETRY_DELAY }}
+        # Seconds a load waits for the shared-store lock; 0 loads unlocked.
+        M6E_LOAD_LOCK_WAIT: ${{ env.M6E_LOAD_LOCK_WAIT }}
       run: bash "$GITHUB_ACTION_PATH/load.sh"
