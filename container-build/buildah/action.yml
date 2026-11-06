@@ -90,6 +90,11 @@ inputs:
     description: Image that registers a missing QEMU handler (empty => gate only, never register).
     required: false
     default: "docker.io/tonistiigi/binfmt@sha256:1b804311fe87047a4c96d38b4b3ef6f62fca8cd125265917a9e3dc3c996c39e6"
+  memory:
+    # From org.projectfile.ci.build-memory: a job env cannot beat the runner’s runner.envs.
+    description: Build memory cap, swap follows it (empty => the runner’s M6E_BUILDAH_MEMORY).
+    required: false
+    default: ""
 runs:
   using: composite
   steps:
@@ -118,8 +123,8 @@ runs:
         # cap the runner sets on its service never reaches a build: a runaway RUN then
         # eats the whole shared plane cgroup and the kernel kills an arbitrary victim,
         # which reports as `signal: killed` with no exit status and no owner.
-        M6E_BUILDAH_MEMORY: ${{ env.M6E_BUILDAH_MEMORY }}
-        M6E_BUILDAH_MEMORY_SWAP: ${{ env.M6E_BUILDAH_MEMORY_SWAP }}
+        M6E_BUILDAH_MEMORY: ${{ inputs.memory || env.M6E_BUILDAH_MEMORY }}
+        M6E_BUILDAH_MEMORY_SWAP: ${{ inputs.memory || env.M6E_BUILDAH_MEMORY_SWAP }}
         M6E_BUILDAH_CPU_SHARE: ${{ env.M6E_BUILDAH_CPU_SHARE }}
       run: bash "$GITHUB_ACTION_PATH/build.sh"
     # Forgejo's v4 fork, paired with pf-ci's forgejo download-artifact pin.

@@ -88,8 +88,10 @@ source "${GITHUB_ACTION_PATH}/../../store/retry.sh"
 # no cap (local `make build` stays uncapped, the graceful default).
 mem_args=()
 if [ -n "${M6E_BUILDAH_MEMORY:-}" ]; then
+  M6E_BUILDAH_MEMORY="$(bash "${GITHUB_ACTION_PATH}/memory-cap.sh" "${M6E_BUILDAH_MEMORY}")"
   mem_args+=(--memory "${M6E_BUILDAH_MEMORY}")
   if [ -n "${M6E_BUILDAH_MEMORY_SWAP:-}" ]; then
+    M6E_BUILDAH_MEMORY_SWAP="$(bash "${GITHUB_ACTION_PATH}/memory-cap.sh" "${M6E_BUILDAH_MEMORY_SWAP}")"
     mem_args+=(--memory-swap "${M6E_BUILDAH_MEMORY_SWAP}")
   fi
   echo "buildah build memory=${M6E_BUILDAH_MEMORY} swap=${M6E_BUILDAH_MEMORY_SWAP:-<none>} artifact=${ARTIFACT_NAME}"

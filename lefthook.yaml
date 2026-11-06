@@ -14,6 +14,9 @@ pre-push:
     - name: tags-test
       glob: "oci/tags*.sh"
       run: bash oci/tags.test.sh
+    - name: memory-cap-test
+      glob: "container-build/buildah/memory-cap*.sh"
+      run: bash container-build/buildah/memory-cap.test.sh
     - name: release-test
       glob: "forgejo-release/release*.sh"
       run: bash forgejo-release/release.test.sh
