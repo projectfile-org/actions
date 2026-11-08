@@ -26,6 +26,9 @@ pre-push:
     - name: preflight-test
       glob: "preflight/*.sh"
       run: bash preflight/preflight.test.sh
+    - name: store-retry-test
+      glob: "store/retry*.sh"
+      run: bash store/retry.test.sh
     - name: yamllint
       glob: "*.{yml,yaml}"
       run: yamllint --strict {all_files}

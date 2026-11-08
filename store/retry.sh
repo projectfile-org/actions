@@ -19,7 +19,8 @@
 # A regex covering only one silently declines to retry half the occurrences.
 # A cache-hit image ID reaped before buildah opens it falls back to name parsing, which rejects a 64-hex ID.
 # A layer staged under overlay-layers/tmp vanishes before its rename into place when a sibling job touches the same layer.
-STORE_RACE='layer not known|image not known|identifier is not an image|layer for blob .*not found|getting source imageReference for "[0-9a-f]{64}"|rename [^ ]*/overlay-layers/tmp/temp-dir-[0-9]+/[^ ]* [^ ]*: no such file or directory'
+# The same reap during the unpack itself: mkdir of a top-level path fails only when the layer root is gone.
+STORE_RACE='layer not known|image not known|identifier is not an image|layer for blob .*not found|getting source imageReference for "[0-9a-f]{64}"|rename [^ ]*/overlay-layers/tmp/temp-dir-[0-9]+/[^ ]* [^ ]*: no such file or directory|unpacking failed \(error: exit status 1; output: mkdir /[^/ ]+: no such file or directory\)'
 # GNU tee where installed: the uutils one panics on a short tee(2) under pipe-page exhaustion.
 STORE_TEE="$(command -v gnutee)" || STORE_TEE="tee"
 
