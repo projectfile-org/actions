@@ -1,0 +1,37 @@
+---
+# SPDX-FileCopyrightText: 2026 Damián Búho <damian.buho@proton.me>
+#
+# SPDX-License-Identifier: MIT
+name: event
+description: State a goal’s verdict over its needs, or report what a publish shipped, and POST it to the events webhook.
+inputs:
+  goal:
+    description: The workflow goal the event belongs to.
+    required: true
+  needs:
+    description: One `job=result` line per judged job; ignored when `event` is set.
+    required: false
+    default: ""
+  event:
+    description: A fact event name (ci.image.published); empty judges `needs` into a goal.* event.
+    required: false
+    default: ""
+  cell:
+    description: The matrix cell as JSON, for a fact event.
+    required: false
+    default: "null"
+  webhook:
+    description: The events sink URL; empty skips the POST.
+    required: false
+    default: ""
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      env:
+        EVENT_GOAL: ${{ inputs.goal }}
+        EVENT_NEEDS: ${{ inputs.needs }}
+        EVENT_NAME: ${{ inputs.event }}
+        EVENT_CELL: ${{ inputs.cell }}
+        EVENT_WEBHOOK: ${{ inputs.webhook }}
+      run: bash "$GITHUB_ACTION_PATH/event.sh"

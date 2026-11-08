@@ -29,6 +29,9 @@ pre-push:
     - name: store-retry-test
       glob: "store/retry*.sh"
       run: bash store/retry.test.sh
+    - name: event-test
+      glob: "event/*.sh"
+      run: bash event/event.test.sh
     - name: yamllint
       glob: "*.{yml,yaml}"
       run: yamllint --strict {all_files}

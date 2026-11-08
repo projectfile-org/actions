@@ -140,6 +140,7 @@ stayed behind.
 | `image-scan`      | planned | scanner against `oci-archive:<artifact>.tar` (daemonless)|
 | `secrets-provision` | landed | `org.projectfile.ci.secrets` declarations → `.secrets/` tree (value-write / docker-run dispatcher) |
 | `preflight`       | landed  | host-side probe, no tool image: `images` resolves each ref to a digest (skopeo), checks its version range and `org.projectfile.provides` commands and caches the verdict by digest; `hosts` opens each `host:port`; `disk` checks free space |
+| `event`           | landed  | host-side, no tool image: judges a goal’s `job=result` needs into `goal.succeeded`, `goal.failed` or `goal.skipped` (failing on any failure), or reads a publish’s digest and tag files into a `ci.image.published` fact; POSTs either to the events webhook with timeout and retries, fail-soft |
 
 `live` is intentionally absent — it is rendered as fused run-steps by pf-ci, not
 dispatched here (see ["There is no `live` action"](#there-is-no-live-action-dissolved-into-run-steps)).
