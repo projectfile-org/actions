@@ -1,0 +1,24 @@
+---
+# SPDX-FileCopyrightText: 2026 Damián Búho <damian.buho@proton.me>
+#
+# SPDX-License-Identifier: MIT
+#
+# pages-deploy — publish a built static site directory to this repository’s GitHub Pages.
+name: pages-deploy
+description: Upload a static site directory as the Pages artifact and deploy it to GitHub Pages.
+# Step env: PAGES_PATH, the site directory (default dist/site). The job needs `pages: write` and `id-token: write`.
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      run: bash "$GITHUB_ACTION_PATH/site.sh"
+    - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9  # v5.0.0
+      with:
+        path: ${{ env.PAGES_SITE }}
+    - id: deploy
+      uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346  # v5.0.1
+    - shell: bash
+      env:
+        PAGES_URL: ${{ steps.deploy.outputs.page_url }}
+      run: |
+        echo "pages-deploy: published ${PAGES_URL}"
