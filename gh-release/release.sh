@@ -6,7 +6,7 @@
 
 set -eu
 
-# release.sh - create the GitHub release for RELEASE_TAG from its tag message, links rooted at RELEASE_URL, attaching every RELEASE_PATH-* asset and sidecar
+# release.sh - create the GitHub release for RELEASE_TAG from its tag message, links rooted at RELEASE_URL, attaching every RELEASE_PATH-* asset and sidecar, retried (RELEASE_RETRIES, RELEASE_TIMEOUT)
 
 log() { printf '[gh-release] %s\n' "$*" >&2; }
 
@@ -39,12 +39,26 @@ else
 fi
 stable=${RELEASE_TARGET:-}
 log "release tag=${tag} target=${stable:-<default branch>}"
-if gh release create "${tag}" --verify-tag ${stable:+--target "${stable}"} --title "${title}" --notes "${notes}" "$@"; then
-    log "created release tag=${tag} title=${title} assets=$#"
-elif [ "$#" -gt 0 ]; then
-    log "release tag=${tag} exists, uploading assets=$# first=$1 (--clobber)"
-    gh release upload "${tag}" "$@" --clobber
-else
-    gh release view "${tag}" >/dev/null
-    log "release tag=${tag} exists, nothing to attach"
-fi
+timeout_s=${RELEASE_TIMEOUT:-300}
+retries=${RELEASE_RETRIES:-3}
+
+# One idempotent round: create, else attach to the existing release, else confirm it exists
+publish() {
+    if timeout "${timeout_s}" gh release create "${tag}" --verify-tag ${stable:+--target "${stable}"} --title "${title}" --notes "${notes}" "$@"; then
+        log "created release tag=${tag} title=${title} assets=$#"
+    elif [ "$#" -gt 0 ]; then
+        log "release tag=${tag} not created, uploading assets=$# first=$1 (--clobber)"
+        timeout "${timeout_s}" gh release upload "${tag}" "$@" --clobber
+    else
+        timeout "${timeout_s}" gh release view "${tag}" >/dev/null && log "release tag=${tag} exists, nothing to attach"
+    fi
+}
+
+attempt=1
+until publish "$@"; do
+    [ "${attempt}" -lt "${retries}" ] || { log "release tag=${tag} failed after attempts=${attempt}"; exit 1; }
+    delay=$((2 * (1 << (attempt - 1)) + $(od --address-radix=n --read-bytes=1 --format=u1 /dev/urandom) % 3))
+    log "release tag=${tag} failed attempt=${attempt}/${retries}, retrying in ${delay}s"
+    sleep "${delay}"
+    attempt=$((attempt + 1))
+done

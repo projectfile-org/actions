@@ -31,6 +31,19 @@ for want in "release" "create" "0.1.0" "--target" "main" "Faster start" "[rules]
 	[[ "${args}" == *"${want}"* ]] || { echo "gh-release-test: FAIL missing ${want}" >&2; echo "${args}" >&2; exit 1; }
 done
 
+# A round where every gh call fails (network down) is retried whole, and the next round creates
+cat > "${work}/bin/gh" <<'STUB'
+#!/bin/sh
+n=$(cat "${GH_STUB}/calls" 2>/dev/null || echo 0); echo $((n + 1)) > "${GH_STUB}/calls"
+[ "${n}" -ge 2 ] || exit 1
+printf "%s\0" "$@" >> "${GH_STUB}/gh.log"
+STUB
+: > "${work}/gh.log"
+GH_STUB="${work}" PATH="${work}/bin:${PATH}" RELEASE_TAG=0.1.0 RELEASE_PATH=dist/x RELEASE_RETRIES=2 bash "${here}/release.sh" 2> "${work}/retry.log"
+grep --quiet 'failed attempt=1/2, retrying' "${work}/retry.log" || { echo "gh-release-test: FAIL no retry" >&2; cat "${work}/retry.log" >&2; exit 1; }
+[[ "$(tr '\0' '\n' < "${work}/gh.log")" == release$'\n'create* ]] || { echo "gh-release-test: FAIL retry did not create" >&2; exit 1; }
+printf '#!/bin/sh\nprintf "%%s\\0" "$@" >> "%s/gh.log"\n' "${work}" > "${work}/bin/gh"
+
 # M6E_RELEASE_TAG alone names the tag and roots the links at the forge blob URL
 : > "${work}/gh.log"
 PATH="${work}/bin:${PATH}" M6E_RELEASE_TAG=0.1.0 GITHUB_SERVER_URL=https://github.com GITHUB_REPOSITORY=o/r RELEASE_TARGET=main bash "${here}/release.sh"
@@ -53,4 +66,4 @@ git clone --quiet "${work}/repo" "${work}/clone"
 git -C "${work}/clone" tag --force 0.1.0 '0.1.0^{commit}'
 title="$(cd "${work}/clone" && bash "${here}/tag-message.sh" 0.1.0 title 2>/dev/null)"
 [[ "${title}" == "Faster start" ]] || { echo "gh-release-test: FAIL flattened title=${title}" >&2; exit 1; }
-echo "gh-release-test: PASS title, links, target, 2 assets, release-tag fallback, signed and flattened tags"
+echo "gh-release-test: PASS title, links, target, 2 assets, retry, release-tag fallback, signed and flattened tags"
