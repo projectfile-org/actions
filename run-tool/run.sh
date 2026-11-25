@@ -275,7 +275,10 @@ else
   if [ "${pull}" = always ]; then
     quiet_opts=(--quiet)                                                     # the pull-memo line already names the ref, so the per-blob wall adds nothing
     [ "${verbosity}" != debug ] || quiet_opts=()                             # debug asks for the copy trace back
-    if docker pull "${quiet_opts[@]}" "${platform_opts[@]}" "${ref}"; then
+    OCI_ACTION=run-tool                                                      # names this action in every retry line
+    # shellcheck source-path=SCRIPTDIR source=../oci/retry.sh
+    source "${GITHUB_ACTION_PATH}/../oci/retry.sh"
+    if oci_retry "pull ref=${ref}" docker pull "${quiet_opts[@]}" "${platform_opts[@]}" "${ref}"; then
       pull=missing                                                           # the run reuses exactly what this pull fetched
       if [ "${memo_write}" = yes ]; then
         # Write beside the memo then rename — atomic, no lock; an unwritable cache degrades to a per-step pull, never to a failed step.
