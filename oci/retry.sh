@@ -16,8 +16,7 @@
 # it never ends. The cap has to clear a full layer upload of a large image, so it is
 # generous by default and tunable; expiry (rc 124) is just another failed attempt.
 #
-# Only the mutating crossings are wrapped; a login and a read-back verify stay
-# single-shot. M6E_OCI_RETRIES=1 opts out. SOURCED, not executed.
+# Every registry crossing goes through it: login, list, copy, push and read-back. M6E_OCI_RETRIES=1 opts out. SOURCED, not executed.
 
 _oci_retries="${M6E_OCI_RETRIES:-3}"
 _oci_backoff="${M6E_OCI_BACKOFF:-2}"

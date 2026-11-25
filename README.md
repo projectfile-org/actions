@@ -169,8 +169,8 @@ REGISTRY_PASSWORD]` and pf-ci's per-target credentials overlay binds those
 NAMES to secret refs on the push job (a composite action's bash reads the job's OS
 env, never the `secrets` context). The push ref is the basename `container-build`
 stamped into the tar; a `registry:` input (the leaf’s `registry:` var) re-prefixes
-it under a private host, ABSENT keeps the Docker Hub default. The copy is wrapped
-in a bounded retry+exponential-backoff loop (`M6E_OCI_RETRIES` /
+it under a private host, ABSENT keeps the Docker Hub default. Every registry
+crossing (login, tag listing, copy, read-back verify) is wrapped in a bounded retry+exponential-backoff loop (`M6E_OCI_RETRIES` /
 `M6E_OCI_BACKOFF`), each attempt capped in time (`M6E_OCI_TIMEOUT`, default 900s)
 so a registry that accepts the connection and then stops answering fails instead
 of hanging the release.

@@ -121,6 +121,10 @@ oci_archive() {                              # $1 artifact stem → sets ${archi
   fi
 }
 
+# Every registry crossing below runs under bounded retry, backoff and a per-attempt timeout
+# shellcheck source-path=SCRIPTDIR source=../oci/retry.sh
+source "${GITHUB_ACTION_PATH}/../oci/retry.sh"
+
 # One authfile holds every server, so each destination logs in once, up front.
 # shellcheck source-path=SCRIPTDIR source=../oci/auth.sh
 source "${GITHUB_ACTION_PATH}/../oci/auth.sh"
@@ -130,10 +134,6 @@ oci_login "${authfile}" "${signer_dir}"
 # the signer reads. Declaration order is the route's order, so the project decides
 # which registry that is.
 image_repo="${sink_repos[0]}"
-
-# Bounded registry crossings: the copies and the tag listing retry, login and verify stay single-shot
-# shellcheck source-path=SCRIPTDIR source=../oci/retry.sh
-source "${GITHUB_ACTION_PATH}/../oci/retry.sh"
 
 # Lists the primary repo's tags; a repository the registry does not know yet has none
 _oci_list_tags() {
@@ -204,7 +204,11 @@ echo "oci-push repo=${image_repo} arches=[${arch_names[*]}] tags=[${tags[*]}]"
 # config blob (tens of KB) — `--config` fetches that descriptor alone, never the
 # layers. M6E_PUBLISH_VERIFY=N opts out.
 _published_config() {                       # $@ → skopeo transport + flags
-  skopeo inspect --config --raw "$@" | jq --sort-keys '.config'
+  oci_retry "inspect-config ref=${*: -1}" skopeo inspect --config --raw "$@" | jq --sort-keys '.config'
+}
+
+_raw_manifest() {                           # $1 ref → the manifest bytes the registry serves
+  oci_retry "inspect-raw ref=$1" skopeo inspect --raw --authfile "${authfile}" "docker://$1"
 }
 
 
@@ -293,7 +297,7 @@ for t in "${tags[@]}"; do
       --compression-format gzip --authfile "${authfile}"                      \
       "${list}" "docker://${ref}"
     # the index digest is the digest of the bytes the registry serves for the tag
-    skopeo inspect --raw --authfile "${authfile}" "docker://${ref}" | skopeo manifest-digest /dev/stdin > "${digestfile}"
+    _raw_manifest "${ref}" | skopeo manifest-digest /dev/stdin > "${digestfile}"
   else
     echo "oci-push copying archive=${arch_stems[0]}.tar -> ref=${ref} format=v2s2 compression=gzip"
     oci_retry "copy ref=${ref}" skopeo copy --format v2s2                     \
@@ -309,7 +313,7 @@ for t in "${tags[@]}"; do
       # The registry is the only witness that the index IS one: a `manifest push` that
       # silently published a single image would leave every per-arch consumer pulling
       # the runner's architecture, and the local list would still inspect clean.
-      _live_arches="$(skopeo inspect --raw --authfile "${authfile}" "docker://${verified}" |
+      _live_arches="$(_raw_manifest "${verified}" |
         jq --raw-output '[.manifests[]?.platform.architecture] | unique | join(",")')"
       if [ "${_want}" != "${_live_arches}" ]; then
         echo "oci-push VERIFY FAILED ref=${verified} — the registry serves arches=[${_live_arches:-<not an index>}], declared=[${_want}]" >&2

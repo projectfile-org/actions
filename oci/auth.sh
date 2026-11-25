@@ -52,6 +52,12 @@ _oci_signer_key() {                          # $1 server → the key the signer 
   esac
 }
 
+# One skopeo login with the password on stdin, re-read per attempt; timeout runs it through bash -c
+_oci_login_once() {                          # $1 authfile, $2 user, $3 server; OCI_LOGIN_PASSWORD in env
+  printf '%s' "${OCI_LOGIN_PASSWORD}" | skopeo login --authfile "$1" --username "$2" --password-stdin "$3"
+}
+export -f _oci_login_once
+
 # sink_names/sink_repos are the caller's, populated by oci/sinks.sh before this is
 # sourced — the arrays cross a file boundary shellcheck cannot follow.
 # shellcheck disable=SC2154
@@ -71,8 +77,8 @@ oci_login() {                                # $1 authfile, $2 signer config dir
       return 1
     fi
     echo "${OCI_ACTION} logging in sink=${_sink:-<default>} server=${_server} user=${_user}"
-    printf '%s' "${_pass}" | skopeo login --authfile "${_authfile}"               \
-      --username "${_user}" --password-stdin "${_server}"
+    OCI_LOGIN_PASSWORD="${_pass}" oci_retry "login sink=${_sink:-<default>} server=${_server}" \
+      "${BASH}" -c _oci_login_once _ "${_authfile}" "${_user}" "${_server}" || return 1
     _auths="${_auths:+${_auths},}\"$(_oci_signer_key "${_server}")\":{\"auth\":\"$(printf '%s:%s' "${_user}" "${_pass}" | base64 --wrap 0)\"}"
   done
   [ -n "${_signer_dir}" ] || return 0
