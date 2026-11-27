@@ -44,6 +44,7 @@ stub="$(mktemp --directory)"
 trap 'rm -rf "${stub}"' EXIT
 cat > "${stub}/skopeo" <<'STUB'
 #!/usr/bin/env bash
+[[ " $* " == *" --username ${WANT_USER} "* ]] || { echo "stub: username not passed: $*" >&2; exit 4; }
 [ "$(cat)" = "${WANT_PASSWORD}" ] || { echo "stub: password not on stdin" >&2; exit 3; }
 [ -f "${STUB_STATE}" ] && exit 0
 : > "${STUB_STATE}"
@@ -58,7 +59,7 @@ login() {
   rm -f "${stub}/state"
   (
     OCI_ACTION=retry-test M6E_OCI_RETRIES="${retries}" M6E_OCI_BACKOFF=0
-    export PATH="${stub}:${PATH}" STUB_STATE="${stub}/state" WANT_PASSWORD=pw REGISTRY_USERNAME=u REGISTRY_PASSWORD=pw
+    export PATH="${stub}:${PATH}" STUB_STATE="${stub}/state" WANT_PASSWORD=pw WANT_USER=u REGISTRY_USERNAME=u REGISTRY_PASSWORD=pw
     # shellcheck source-path=SCRIPTDIR source=retry.sh
     source "${here}/retry.sh"
     # shellcheck source-path=SCRIPTDIR source=auth.sh

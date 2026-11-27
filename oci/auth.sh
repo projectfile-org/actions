@@ -78,7 +78,7 @@ oci_login() {                                # $1 authfile, $2 signer config dir
     fi
     echo "${OCI_ACTION} logging in sink=${_sink:-<default>} server=${_server} user=${_user}"
     OCI_LOGIN_PASSWORD="${_pass}" oci_retry "login sink=${_sink:-<default>} server=${_server}" \
-      "${BASH}" -c _oci_login_once _ "${_authfile}" "${_user}" "${_server}" || return 1
+      "${BASH}" -c '_oci_login_once "$@"' _ "${_authfile}" "${_user}" "${_server}" || return 1
     _auths="${_auths:+${_auths},}\"$(_oci_signer_key "${_server}")\":{\"auth\":\"$(printf '%s:%s' "${_user}" "${_pass}" | base64 --wrap 0)\"}"
   done
   [ -n "${_signer_dir}" ] || return 0
